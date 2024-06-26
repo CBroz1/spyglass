@@ -172,20 +172,24 @@ class AbstractGraph(ABC):
             return [self._ensure_names(t) for t in table]
         return getattr(table, "full_table_name", None)
 
-    def _get_node(self, table: Union[str, Table]):
+    def _get_node(self, table: Union[str, Table], permit_fail: bool = False):
         """Get node from graph."""
         table = self._ensure_names(table)
         if not (node := self.graph.nodes.get(table)):
-            raise ValueError(
-                f"Table {table} not found in graph."
-                + "\n\tPlease import this table and rerun"
-            )
+            if permit_fail:
+                print("Table not found in graph.: ", table)
+                return None
+            else:
+                raise ValueError(
+                    f"Table {table} not found in graph."
+                    + "\n\tPlease import this table and rerun"
+                )
         return node
 
     def _set_node(self, table, attr: str = "ft", value: Any = None):
         """Set attribute on node. General helper for various attributes."""
         table = self._ensure_names(table)
-        _ = self._get_node(table)  # Ensure node exists
+        # _ = self._get_node(table)  # Ensure node exists
         self.graph.nodes[table][attr] = value
 
     def _get_edge(self, child: str, parent: str) -> Tuple[bool, Dict[str, str]]:
@@ -255,7 +259,9 @@ class AbstractGraph(ABC):
         else:
             restr = True
 
-        if not (ft := self._get_node(table).get("ft")):
+        if (node := self._get_node(table, permit_fail=True)) is None or (
+            not (ft := node.get("ft"))
+        ):
             ft = FreeTable(self.connection, table)
             self._set_node(table, "ft", ft)
 
