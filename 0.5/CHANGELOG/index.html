@@ -22,7 +22,7 @@
       
       
       <link rel="icon" href="../images/Spyglass.svg">
-      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.28">
+      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.29">
     
     
       
@@ -30,7 +30,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.6543a935.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.76a95c52.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
@@ -4696,23 +4696,14 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#053-unreleased" class="md-nav__link">
+  <a href="#053-july-15-2024" class="md-nav__link">
     <span class="md-ellipsis">
-      0.5.3 (Unreleased)
+      0.5.3 (July 15, 2024)
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="0.5.3 (Unreleased)">
+    <nav class="md-nav" aria-label="0.5.3 (July 15, 2024)">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#release-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Release Notes
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#infrastructure" class="md-nav__link">
@@ -4996,23 +4987,14 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#053-unreleased" class="md-nav__link">
+  <a href="#053-july-15-2024" class="md-nav__link">
     <span class="md-ellipsis">
-      0.5.3 (Unreleased)
+      0.5.3 (July 15, 2024)
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="0.5.3 (Unreleased)">
+    <nav class="md-nav" aria-label="0.5.3 (July 15, 2024)">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#release-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Release Notes
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#infrastructure" class="md-nav__link">
@@ -5260,16 +5242,7 @@
 
 
 <h1 id="change-log">Change Log<a class="headerlink" href="#change-log" title="Permanent link">&para;</a></h1>
-<h2 id="053-unreleased"><a href="https://github.com/LorenFrankLab/spyglass/releases/tag/0.5.3">0.5.3</a> (Unreleased)<a class="headerlink" href="#053-unreleased" title="Permanent link">&para;</a></h2>
-<h3 id="release-notes">Release Notes<a class="headerlink" href="#release-notes" title="Permanent link">&para;</a></h3>
-<!-- Running draft to be removed immediately prior to release. -->
-
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span> <span class="nn">spyglass.common.common_behav</span> <span class="kn">import</span> <span class="n">PositionIntervalMap</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span> <span class="nn">spyglass.decoding.v1.core</span> <span class="kn">import</span> <span class="n">PositionGroup</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">PositionIntervalMap</span><span class="o">.</span><span class="n">alter</span><span class="p">()</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">PositionGroup</span><span class="o">.</span><span class="n">alter</span><span class="p">()</span>
-</span></code></pre></div>
+<h2 id="053-july-15-2024"><a href="https://github.com/LorenFrankLab/spyglass/releases/tag/0.5.3">0.5.3</a> (July 15, 2024)<a class="headerlink" href="#053-july-15-2024" title="Permanent link">&para;</a></h2>
 <h3 id="infrastructure">Infrastructure<a class="headerlink" href="#infrastructure" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Create class <code>SpyglassGroupPart</code> to aid delete propagations #899</li>
@@ -5287,10 +5260,20 @@
 <li><code>cautious_delete</code> now checks <code>IntervalList</code> and externals tables. #1002</li>
 <li>Allow mixin tables with parallelization in <code>make</code> to run populate with
     <code>processes &gt; 1</code> #1001</li>
+<li>Speed up fetch_nwb calls through merge tables #1017</li>
+<li>Allow <code>ModuleNotFoundError</code> or <code>ImportError</code> for optional dependencies #1023</li>
+<li>Ensure integrity of group tables #1026</li>
+<li>Revise docs organization.<ul>
+<li>Misc -&gt; Features/ForDevelopers. #1029</li>
+<li>Installation instructions -&gt; Setup notebook. #1029</li>
+</ul>
+</li>
 </ul>
 <h3 id="pipelines">Pipelines<a class="headerlink" href="#pipelines" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Common<ul>
+<li>
+<p>Common</p>
+<ul>
 <li><code>PositionVideo</code> table now inserts into self after <code>make</code> #966</li>
 <li>Don't insert lab member when creating lab team #983</li>
 <li>Files created by <code>AnalysisNwbfile.create()</code> receive new object_id #999</li>
@@ -5301,14 +5284,19 @@
 <li>Improve logging clarity in <code>populate_all_common</code> #870</li>
 <li><code>PositionIntervalMap</code> now inserts null entries for missing intervals #870</li>
 <li><code>AnalysisFileLog</code> now truncates table names that exceed field length #1021</li>
+<li>Disable logging with <code>AnalysisFileLog</code> #1024</li>
 </ul>
 </li>
-<li>Decoding:<ul>
+<li>
+<p>Decoding:</p>
+<ul>
 <li>Default values for classes on <code>ImportError</code> #966</li>
 <li>Add option to upsample data rate in <code>PositionGroup</code> #1008</li>
 </ul>
 </li>
-<li>Position<ul>
+<li>
+<p>Position</p>
+<ul>
 <li>Allow dlc without pre-existing tracking data #973, #975</li>
 <li>Raise <code>KeyError</code> for missing input parameters across helper funcs #966</li>
 <li><code>DLCPosVideo</code> table now inserts into self after <code>make</code> #966</li>
@@ -5319,9 +5307,13 @@
 <li>Replace <code>OutputLogger</code> context manager with decorator #870</li>
 <li>Rename <code>check_videofile</code> -&gt; <code>find_mp4</code> and <code>get_video_path</code> -&gt;
     <code>get_video_info</code> to reflect actual use #870</li>
+<li>Fix <code>red_led_bisector</code> <code>np.nan</code> handling issue from #870. Fixed in #1034</li>
+<li>Fix <code>one_pt_centoid</code> <code>np.nan</code> handling issue from #870. Fixed in #1034</li>
 </ul>
 </li>
-<li>Spikesorting<ul>
+<li>
+<p>Spikesorting</p>
+<ul>
 <li>Allow user to set smoothing timescale in <code>SortedSpikesGroup.get_firing_rate</code>
     #994</li>
 <li>Update docstrings #996</li>

@@ -22,7 +22,7 @@
       
       
       <link rel="icon" href="../../images/Spyglass.svg">
-      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.28">
+      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.29">
     
     
       
@@ -30,7 +30,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.6543a935.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.76a95c52.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
@@ -1396,29 +1396,44 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example-params-table" class="md-nav__link">
+  <a href="#example-table-types" class="md-nav__link">
     <span class="md-ellipsis">
-      Example Params Table
+      Example Table Types
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example Table Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#params-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      Params Table
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#example-selection-table" class="md-nav__link">
+  <a href="#selection-table" class="md-nav__link">
     <span class="md-ellipsis">
-      Example Selection Table
+      Selection Table
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#example-compute-table" class="md-nav__link">
+  <a href="#compute-table" class="md-nav__link">
     <span class="md-ellipsis">
-      Example Compute Table
+      Compute Table
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -4930,29 +4945,44 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example-params-table" class="md-nav__link">
+  <a href="#example-table-types" class="md-nav__link">
     <span class="md-ellipsis">
-      Example Params Table
+      Example Table Types
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example Table Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#params-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      Params Table
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#example-selection-table" class="md-nav__link">
+  <a href="#selection-table" class="md-nav__link">
     <span class="md-ellipsis">
-      Example Selection Table
+      Selection Table
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#example-compute-table" class="md-nav__link">
+  <a href="#compute-table" class="md-nav__link">
     <span class="md-ellipsis">
-      Example Compute Table
+      Compute Table
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -5001,7 +5031,7 @@ including explations of the different components that define a pipeline.</p>
 <p>Some of this will be redundant with general Python best practices and DataJoint
 documentation, but it is important be able to read a schema, espically if you
 plan to write your own.</p>
-<p>Later sections will depend on information presenten in the article on
+<p>Later sections will depend on information presented in the article on
 <a href="../TableTypes/">Table Types</a>.</p>
 <h2 id="goals-of-a-schema">Goals of a schema<a class="headerlink" href="#goals-of-a-schema" title="Permanent link">&para;</a></h2>
 <ul>
@@ -5348,7 +5378,8 @@ methods.</p>
 </span><span id="__span-4-44"><a id="__codelineno-4-44" name="__codelineno-4-44" href="#__codelineno-4-44"></a>        <span class="n">ret</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;subject_id&quot;</span><span class="p">:</span> <span class="n">actual_id</span><span class="p">}</span> <span class="k">for</span> <span class="n">actual_id</span> <span class="ow">in</span> <span class="n">actual_ids</span><span class="p">]</span>
 </span><span id="__span-4-45"><a id="__codelineno-4-45" name="__codelineno-4-45" href="#__codelineno-4-45"></a>        <span class="k">return</span> <span class="n">ret</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">ret</span>
 </span></code></pre></div>
-<h3 id="example-params-table">Example Params Table<a class="headerlink" href="#example-params-table" title="Permanent link">&para;</a></h3>
+<h3 id="example-table-types">Example Table Types<a class="headerlink" href="#example-table-types" title="Permanent link">&para;</a></h3>
+<h4 id="params-table">Params Table<a class="headerlink" href="#params-table" title="Permanent link">&para;</a></h4>
 <p>This stores the set of values that may be used in an analysis. For analyses that
 are unlikely to change, consider specifying all parameters in the table's
 secondary keys. For analyses that may have different parameters, of when
@@ -5373,7 +5404,7 @@ python dictionary.</p>
 </span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Insert default values.&quot;&quot;&quot;</span>  <span class="c1"># skip_duplicates prevents errors</span>
 </span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>        <span class="bp">cls</span><span class="p">()</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">rows</span><span class="o">=</span><span class="bp">cls</span><span class="o">.</span><span class="n">contents</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </span></code></pre></div>
-<h3 id="example-selection-table">Example Selection Table<a class="headerlink" href="#example-selection-table" title="Permanent link">&para;</a></h3>
+<h4 id="selection-table">Selection Table<a class="headerlink" href="#selection-table" title="Permanent link">&para;</a></h4>
 <p>This is the staging area to pair sessions with parameter sets. Depending on what
 is inserted, you might pair the same subject with different parameter sets, or
 different subjects with the same parameter set.</p>
@@ -5396,7 +5427,7 @@ different subjects with the same parameter set.</p>
 </span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>            <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 </span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>        <span class="p">)</span>
 </span></code></pre></div>
-<h3 id="example-compute-table">Example Compute Table<a class="headerlink" href="#example-compute-table" title="Permanent link">&para;</a></h3>
+<h4 id="compute-table">Compute Table<a class="headerlink" href="#compute-table" title="Permanent link">&para;</a></h4>
 <p>This is how processing steps are paired with data entry. By running
 <code>MyAnalysis().populate()</code>, the <code>make</code> method is called for each foreign key
 pairing in the selection table. The <code>make</code> method should end in one or one

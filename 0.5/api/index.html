@@ -22,7 +22,7 @@
       
       
       <link rel="icon" href="../images/Spyglass.svg">
-      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.28">
+      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.29">
     
     
       
@@ -30,7 +30,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.6543a935.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.76a95c52.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
@@ -1370,6 +1370,17 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Overview
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -1379,6 +1390,34 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#directories" class="md-nav__link">
+    <span class="md-ellipsis">
+      Directories
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -4715,6 +4754,23 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#directories" class="md-nav__link">
+    <span class="md-ellipsis">
+      Directories
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -4735,26 +4791,23 @@
 <p>The files in this directory are automatically generated from the docstrings in
 the source code. They include descriptions of each of the DataJoint tables and
 other classes/methods within Spyglass.</p>
-<p>These docs are updated any time a new release is made or a tag is pushed to the
-repository.</p>
-<!--
-TODO: add section indexes
-https://github.com/oprypin/mkdocs-gen-files/issues/2
-- [cli](./cli/)
-- [common](./common/)
-- [data_import](./data_import)
-- [decoding](./decoding)
-- [figurl_views](./figurl_views)
-- [lfp](./lfp)
-- [lock](./lock)
-- [position](./position)
-- [position_linearization](./position_linearization)
-- [ripple](./ripple)
-- [settings.py](./settings.py)
-- [sharing](./sharing)
-- [spikesorting](./spikesorting)
-- [utils](./utils)
---->
+<h2 id="directories">Directories<a class="headerlink" href="#directories" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>cli</code>: See README.md at <code>spyglass/examples/cli/README.md</code></li>
+<li><code>common</code>: Data insertion point for all pipelines.</li>
+<li><code>data_import</code>: Data insertion tools.</li>
+<li><code>decoding</code>: Decoding animal position from spiking data.</li>
+<li><code>figurl_views</code>: Tools for visualizing data.</li>
+<li><code>lfp</code>: Local field potential processing.</li>
+<li><code>lock</code>: Tables for locking files, preventing deletion.</li>
+<li><code>position</code>: Tracking animal posisiton via LEDs ('Trodes') or DeepLabCut.</li>
+<li><code>linearization</code>: Linearizing position data for decoding.</li>
+<li><code>ripple</code>: Detecting ripples in LFP data.</li>
+<li><code>sharing</code>: Tables for data sharing via Kachery.</li>
+<li><code>spikesorting</code>: Sorting spikes from raw electrophysiology data.</li>
+<li><code>utils</code>: Utilities for working with DataJoint and Neurodata Without Borders
+    (NWB) data.</li>
+</ul>
 
 
 
