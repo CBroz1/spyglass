@@ -203,7 +203,9 @@ class SpikeSorting(SpyglassMixin, dj.Computed):
             # need to remove tempdir and whiten from sorter_params
             sorter_params.pop("tempdir", None)
             sorter_params.pop("whiten", None)
-            sorter_params.pop("outputs", None)
+            sorter_params.pop("n_shifts",None)
+            sorter_params.pop("outputs",None)
+            sorter_params.pop('localization_dict',None)
 
             # Detect peaks for clusterless decoding
             detected_spikes = detect_peaks(recording, **sorter_params)

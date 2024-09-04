@@ -299,6 +299,7 @@ def _get_artifact_times(
         [(0, len(valid_timestamps) - 1)], artifact_intervals_new
     )
 
+
     # convert back to seconds
     artifact_removed_valid_times = []
     for i in artifact_removed_valid_times_ind:

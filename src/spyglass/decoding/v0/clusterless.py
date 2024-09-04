@@ -1,6 +1,5 @@
 """Pipeline for decoding the animal's mental position and some category of interest
 from unclustered spikes and spike waveform features. See [1] for details.
-
 References
 ----------
 [1] Denovellis, E. L. et al. Hippocampal replay of experience at real-world
@@ -21,7 +20,7 @@ import pynwb
 import spikeinterface as si
 import xarray as xr
 
-from spyglass.settings import waveform_dir
+from spyglass.settings import waveforms_dir
 from spyglass.utils import logger
 
 try:
@@ -84,7 +83,6 @@ class MarkParameters(SpyglassMixin, dj.Manual):
 
     def insert_default(self):
         """Insert the default parameter set
-
         Examples
         --------
         {'peak_sign': 'neg', 'threshold' : 100}
@@ -101,11 +99,9 @@ class MarkParameters(SpyglassMixin, dj.Manual):
         """Checks whether the requested mark type is supported.
 
         Currently only 'amplitude" is supported.
-
         Parameters
         ----------
         mark_type : str
-
         """
         supported_types = ["amplitude"]
         return mark_type in supported_types
@@ -157,7 +153,7 @@ class UnitMarks(SpyglassMixin, dj.Computed):
             f'{key["curation_id"]}_clusterless_waveforms'
         )
         waveform_extractor_path = str(
-            Path(waveform_dir) / Path(waveform_extractor_name)
+            Path(waveforms_dir) / Path(waveform_extractor_name)
         )
         if os.path.exists(waveform_extractor_path):
             shutil.rmtree(waveform_extractor_path)
@@ -243,15 +239,9 @@ class UnitMarks(SpyglassMixin, dj.Computed):
         )
 
     @staticmethod
-    def _get_peak_amplitude(
-        waveform: np.array,
-        peak_sign: str = "neg",
-        estimate_peak_time: bool = False,
-    ) -> np.array:
-        """Returns the amplitudes of all channels at the time of the peak.
-
-        Amplitude across channels.
-
+    def _get_peak_amplitude(waveform, peak_sign="neg", estimate_peak_time=False):
+        """Returns the amplitudes of all channels at the time of the peak
+        amplitude across channels.
         Parameters
         ----------
         waveform : np.array
@@ -261,12 +251,9 @@ class UnitMarks(SpyglassMixin, dj.Computed):
         estimate_peak_time : bool, optional
             Find the peak times for each spike because some spikesorters do not
             align the spike time (at index n_time // 2) to the peak
-
         Returns
         -------
-        peak_amplitudes : np.array
-            array-like, shape (n_spikes, n_channels)
-
+        peak_amplitudes : array-like, shape (n_spikes, n_channels)
         """
         if estimate_peak_time:
             if peak_sign == "neg":
@@ -289,7 +276,6 @@ class UnitMarks(SpyglassMixin, dj.Computed):
         timestamps: np.array, marks: np.array, mark_param_dict: dict
     ):
         """Filter the marks by an amplitude threshold
-
         Parameters
         ----------
         timestamps : np.array
@@ -297,14 +283,10 @@ class UnitMarks(SpyglassMixin, dj.Computed):
         marks : np.array
             array-like, shape (n_time, n_channels)
         mark_param_dict : dict
-
         Returns
         -------
-        filtered_timestamps : np.array
-            array-like, shape (n_filtered_time,)
-        filtered_marks : np.array
-            array-like, shape (n_filtered_time, n_channels)
-
+        filtered_timestamps : array-like, shape (n_filtered_time,)
+        filtered_marks : array-like, shape (n_filtered_time, n_channels)
         """
         if mark_param_dict["peak_sign"] == "neg":
             include = np.min(marks, axis=1) <= -1 * mark_param_dict["threshold"]
@@ -409,7 +391,6 @@ class UnitMarksIndicator(SpyglassMixin, dj.Computed):
 
         Plots 2D slices of each of the spike features against each other
         for all electrodes.
-
         Parameters
         ----------
         marks_indicators : xr.DataArray, shape (n_time, n_electrodes, n_features)
@@ -628,7 +609,7 @@ def get_decoding_data_for_epoch(
     interval_list_name: str,
     position_info_param_name: str = "default_decoding",
     additional_mark_keys: dict = {},
-) -> tuple[pd.DataFrame, xr.DataArray, list[slice]]:
+):
     """Collects necessary data for decoding.
 
     Parameters
@@ -694,10 +675,10 @@ def get_decoding_data_for_epoch(
 
 def get_data_for_multiple_epochs(
     nwb_file_name: str,
-    epoch_names: list[str],
+    epoch_names: list,
     position_info_param_name="default_decoding",
     additional_mark_keys: dict = {},
-) -> tuple[pd.DataFrame, xr.DataArray, dict[str, list[slice]], np.ndarray]:
+):
     """Collects necessary data for decoding multiple environments
 
     Parameters
