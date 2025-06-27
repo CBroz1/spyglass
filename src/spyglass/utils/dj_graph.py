@@ -510,6 +510,15 @@ class AbstractGraph(ABC):
             ordered.reverse()
         return [n for n in ordered if n in nodes]
 
+    def _sorted_nodes(
+        self,
+        subgraph: bool = True,
+        reverse: bool = False,
+    ) -> List[str]:
+        """Return sorted list of nodes."""
+        nodes = [n for n in self.visited if not n.isnumeric()]
+        return self._topo_sort(nodes, subgraph=subgraph, reverse=reverse)
+
     @property
     def all_ft(self):
         """Get restricted FreeTables from all visited nodes.
@@ -517,10 +526,9 @@ class AbstractGraph(ABC):
         Topological sort logic adopted from datajoint.diagram.
         """
         self.cascade(warn=False)
-        nodes = [n for n in self.visited if not n.isnumeric()]
         return [
             self._get_ft(table, with_restr=True, warn=False)
-            for table in self._topo_sort(nodes, subgraph=True, reverse=False)
+            for table in self._sorted_nodes(subgraph=True, reverse=False)
         ]
 
     @property

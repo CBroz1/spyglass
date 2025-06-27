@@ -577,7 +577,7 @@ class SpyglassMixin(ExportMixin):
 
     # -------------------------------- populate --------------------------------
 
-    def _hash_upstream(self, keys):
+    def _graph_upstream(self, keys):
         """Hash upstream table keys for no transaction populate.
 
         Uses a RestrGraph to capture all upstream tables, restrict them to
@@ -609,7 +609,34 @@ class SpyglassMixin(ExportMixin):
             for p in parents
         }
 
-        return RestrGraph(seed_table=self, leaves=leaves, cascade=True).hash
+        return RestrGraph(seed_table=self, leaves=leaves, cascade=True)
+
+    def _compare_graphs(self, before, after) -> str:
+        """Compare two RestrGraph objects for differences.
+
+        1. Check if the sorted names of the nodes in both graphs are the same.
+           If not, return a message indicating the difference in order.
+        2. For each pair of tables in the graphs, compare their rows.
+           If any rows differ, return a message indicating the difference.
+        """
+
+        before_names = before._sorted_nodes()
+        after_names = after._sorted_nodes()
+        for before_name, after_name in zip(before_names, after_names):
+            if before_name != after_name:
+                return (
+                    "\nFound tables differ, check order:"
+                    + f"\n\t{before_names}\n\t{after_names}"
+                )
+
+        for before_table, after_table in zip(before.all_ft, after.all_ft):
+            for before_row, after_row in zip(before_table, after_table):
+                if before_row != after_row:
+                    table_name = before_table.full_table_name
+                    return (
+                        f"\nRows in {table_name} differ:"
+                        + f"\n\n{before_table}\n{after_table}"
+                    )
 
     def populate(self, *restrictions, **kwargs):
         """Populate table in parallel, with or without transaction protection.
@@ -653,7 +680,7 @@ class SpyglassMixin(ExportMixin):
             )
 
         if use_transact is False:
-            upstream_hash = self._hash_upstream(keys)
+            before_graph = self._graph_upstream(keys)
             if kwargs:  # Warn of ignoring populate kwargs, bc using `make`
                 logger.warning(
                     "Ignoring kwargs when not using transaction protection."
@@ -666,11 +693,18 @@ class SpyglassMixin(ExportMixin):
             else:  # No transaction protection, use bare make
                 for key in keys:
                     self.make(key)
-                if upstream_hash != self._hash_upstream(keys):
+                after_graph = self._graph_upstream(keys)
+                if before_graph.hash != after_graph.hash:
                     (self & keys).delete(safemode=False)
-                    logger.error(
+                    raise RuntimeError(
                         "Upstream tables changed during non-transaction "
-                        + "populate. Please try again."
+                        + "populate. Please try again.\n Or, use %debug to "
+                        + "inspect the graphs: \n\t {before/after}_graph."
+                        + "_sorted_nodes - to see node names\n\t "
+                        + "{before/after}_graph.all_ft - to see all\n\t"
+                        + "{before/after}_graph._get_ft(table_name, "
+                        + "with_restr=True) - to see table contents\n"
+                        + self._compare_graphs(before_graph, after_graph)
                     )
                 return
 
