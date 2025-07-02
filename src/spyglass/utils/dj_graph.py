@@ -620,6 +620,7 @@ class RestrGraph(AbstractGraph):
             Whether to print verbose output. Default False
         """
         super().__init__(seed_table, verbose=verbose)
+        self._content_cache = dict()  # Cache of table content at hash time
         self.include_files = include_files
 
         self.add_leaves(leaves)
@@ -647,7 +648,9 @@ class RestrGraph(AbstractGraph):
         """Return hash of all visited nodes."""
         initial = hash_md5(b"")
         for table in self.all_ft:
-            # for row in table.fetch(as_dict=True):
+            self._content_cache[table.full_table_name] = table.fetch(
+                as_dict=True
+            )
             for row in table:
                 initial.update(key_hash(row).encode("utf-8"))
         return initial.hexdigest()

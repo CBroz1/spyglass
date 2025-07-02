@@ -624,19 +624,19 @@ class SpyglassMixin(ExportMixin):
         after_names = after._sorted_nodes()
         for before_name, after_name in zip(before_names, after_names):
             if before_name != after_name:
-                return (
+                return (  # Establishes sorted nodes in same order
                     "\nFound tables differ, check order:"
                     + f"\n\t{before_names}\n\t{after_names}"
                 )
 
-        for before_table, after_table in zip(before.all_ft, after.all_ft):
-            for before_row, after_row in zip(before_table, after_table):
-                if before_row != after_row:
-                    table_name = before_table.full_table_name
-                    return (
-                        f"\nRows in {table_name} differ:"
-                        + f"\n\n{before_table}\n{after_table}"
-                    )
+        for table_name in before_names:
+            before_data = before._content_cache[table_name]
+            after_data = after._content_cache[table_name]
+            if before_data != after_data:
+                return (
+                    f"\nRows in {table_name} differ:"
+                    + f"\n\n{before_data}\n{after_data}"
+                )
 
     def populate(self, *restrictions, **kwargs):
         """Populate table in parallel, with or without transaction protection.
@@ -681,6 +681,7 @@ class SpyglassMixin(ExportMixin):
 
         if use_transact is False:
             before_graph = self._graph_upstream(keys)
+            before_hash = before_graph.hash
             if kwargs:  # Warn of ignoring populate kwargs, bc using `make`
                 logger.warning(
                     "Ignoring kwargs when not using transaction protection."
@@ -694,16 +695,15 @@ class SpyglassMixin(ExportMixin):
                 for key in keys:
                     self.make(key)
                 after_graph = self._graph_upstream(keys)
-                if before_graph.hash != after_graph.hash:
+                if before_hash != after_graph.hash:
                     (self & keys).delete(safemode=False)
                     raise RuntimeError(
                         "Upstream tables changed during non-transaction "
                         + "populate. Please try again.\n Or, use %debug to "
                         + "inspect the graphs: \n\t {before/after}_graph."
                         + "_sorted_nodes - to see node names\n\t "
-                        + "{before/after}_graph.all_ft - to see all\n\t"
-                        + "{before/after}_graph._get_ft(table_name, "
-                        + "with_restr=True) - to see table contents\n"
+                        + "{before/after}_graph._content_cache - to see all"
+                        + " table contents as a dict by table name\n\t "
                         + self._compare_graphs(before_graph, after_graph)
                     )
                 return
