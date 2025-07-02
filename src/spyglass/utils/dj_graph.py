@@ -514,10 +514,14 @@ class AbstractGraph(ABC):
         self,
         subgraph: bool = True,
         reverse: bool = False,
+        alpha: bool = False,
     ) -> List[str]:
         """Return sorted list of nodes."""
         nodes = [n for n in self.visited if not n.isnumeric()]
-        return self._topo_sort(nodes, subgraph=subgraph, reverse=reverse)
+        ret = self._topo_sort(nodes, subgraph=subgraph, reverse=reverse)
+        if alpha:
+            ret = sorted(ret, reverse=reverse, key=lambda x: x.lower())
+        return ret
 
     @property
     def all_ft(self):
@@ -647,7 +651,8 @@ class RestrGraph(AbstractGraph):
     def hash(self):
         """Return hash of all visited nodes."""
         initial = hash_md5(b"")
-        for table in self.all_ft:
+        for table_name in self._sorted_nodes(alpha=True):
+            table = self._get_ft(table_name, with_restr=True, warn=False)
             self._content_cache[table.full_table_name] = table.fetch(
                 as_dict=True
             )
