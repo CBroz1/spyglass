@@ -350,7 +350,7 @@ class LFPBandV1(SpyglassMixin, dj.Computed):
             IntervalList()
             & {
                 "nwb_file_name": key["nwb_file_name"],
-                "interval_list_name": interval_list_name,
+                "interval_list_name": str(interval_list_name),
             }
         ).fetch_interval()
 
@@ -600,7 +600,7 @@ class LFPBandV1(SpyglassMixin, dj.Computed):
         lfp_band_valid_times = lfp_band_valid_times.censor(new_timestamps)
         lfp_band_valid_times.set_key(**key, pipeline="lfp band")
         if len(tmp_valid_times) == 0:  # TODO: swap for cautious_insert
-            # add an interval list for the LFP valid times
+            # add an interval list for the LFP band valid times
             IntervalList.insert1(lfp_band_valid_times.as_dict)
         else:
             # check that the valid times are the same
