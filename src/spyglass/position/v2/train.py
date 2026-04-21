@@ -111,18 +111,12 @@ except ImportError:
 
 with suppress_print_from_package():
     try:
-        from deeplabcut import create_training_dataset, train_network
-        from deeplabcut.core.engine import Engine
-
-        try:
-            from deeplabcut import evaluate_network
-        except (ImportError, RecursionError):
-            evaluate_network = None
+        # Only import evaluation function for remaining Model.evaluate() functionality
+        from deeplabcut import evaluate_network
     except (ImportError, RecursionError):
         # RecursionError can occur when TF 2.16+ (Keras 3) is installed without
         # tf-keras; the TF compat layer loader recurses infinitely. Set
         # TF_USE_LEGACY_KERAS=1 and install tf-keras to restore TF-backend support.
-        create_training_dataset, train_network, Engine = [None] * 3
         evaluate_network = None
 
 # -------------------------------- Module setup --------------------------------
@@ -1046,123 +1040,8 @@ class Model(SpyglassMixin, dj.Computed):
         self.insert1(model_result)
         self._info_msg(f"Model training complete: {model_result['model_id']}")
 
-    def _prepare_training_dataset(
-        self, config_path: Path, params: dict, config: dict
-    ) -> None:
-        """Create DLC training dataset if needed.
-
-        Parameters
-        ----------
-        config_path : Path
-            Path to DLC config.yaml file
-        params : dict
-            Training parameters
-        config : dict
-            Loaded DLC config dictionary
-        """
-        shuffle = params.get("shuffle", 1)
-        training_dataset_path = (
-            config_path.parent
-            / "training-datasets"
-            / f"iteration-{config.get('iteration', 0)}"
-        )
-
-        if not training_dataset_path.exists():
-            self._info_msg("Creating training dataset...")
-            try:
-                with suppress_print_from_package():
-                    create_training_dataset(
-                        str(config_path),
-                        num_shuffles=shuffle,
-                        Shuffles=[shuffle],
-                        trainIndices=None,
-                        testIndices=None,
-                        net_type=params.get("net_type"),
-                        augmenter_type=params.get(
-                            "augmenter_type", config.get("default_augmenter")
-                        ),
-                    )
-                self._info_msg("Training dataset created successfully")
-            except Exception as e:
-                self._warn_msg(
-                    f"Training dataset creation failed or already exists: {e}"
-                )
-                # May already exist, continue
-
-    def _execute_training(self, config_path: Path, params: dict) -> None:
-        """Execute DLC network training.
-
-        Parameters
-        ----------
-        config_path : Path
-            Path to DLC config.yaml file
-        params : dict
-            Training parameters
-        """
-        train_params = {
-            "config": str(config_path),
-            "shuffle": params.get("shuffle", 1),
-            "trainingsetindex": params.get("trainingsetindex", 0),
-            "displayiters": params.get("displayiters"),
-            "saveiters": params.get("saveiters"),
-            "maxiters": params.get("maxiters"),
-        }
-
-        # Remove None values
-        train_params = {k: v for k, v in train_params.items() if v is not None}
-
-        self._info_msg("Starting model training...")
-        self._info_msg(f"Training parameters: {train_params}")
-
-        try:
-            with suppress_print_from_package():
-                train_network(**train_params)
-        except Exception as e:
-            self._err_msg(f"Training failed: {e}")
-            raise
-
-        self._info_msg("Training completed successfully")
-
-    def _localize_trained_model(self, config: dict) -> tuple[str, str]:
-        """Find and validate the trained model.
-
-        Parameters
-        ----------
-        config : dict
-            Loaded DLC config dictionary
-
-        Returns
-        -------
-        tuple[str, str]
-            Model path and generated model_id
-        """
-        latest_model = self._get_latest_dlc_model_info(config)
-        if not latest_model:
-            raise ValueError(
-                "No trained model found after training. Check DLC output."
-            )
-
-        model_path = latest_model["path"]
-        self._info_msg(f"Trained model path: {model_path}")
-
-        # Generate model_id
-        task = config.get("Task", "DLCTask")
-        date = config.get("date", datetime.utcnow().strftime("%Y-%m-%d"))
-
-        model_id = default_pk_name(
-            f"DLC-{task}-{date}",
-            dict(
-                tool="DLC",
-                shuffle=latest_model["shuffle"],
-                iteration=latest_model["iteration"],
-                trainFraction=latest_model["trainFraction"],
-            ),
-        )
-
-        return model_path, model_id
-
     def _register_model_metadata(self, metadata: ModelMetadata) -> str:
-        """Create NWB file with model metadata and register in AnalysisNwbfile.
+        """Create NWB file with model metadata directly in project directory.
 
         Parameters
         ----------
@@ -1172,12 +1051,17 @@ class Model(SpyglassMixin, dj.Computed):
         Returns
         -------
         str
-            NWB file name for AnalysisNwbfile
+            NWB file name for direct reference (stored in project directory)
         """
         from pynwb import NWBHDF5IO, NWBFile
 
         nwb_file_name = f"{metadata.model_id}_model.nwb"
-        nwb_path = metadata.project_path / nwb_file_name
+
+        # Store in analysis directory for AnalysisNwbfile compatibility
+        from spyglass.common import AnalysisNwbfile
+
+        analysis_dir = AnalysisNwbfile()._analysis_dir
+        nwb_path = Path(analysis_dir) / nwb_file_name
 
         # Create basic NWB file
         nwbfile = NWBFile(
@@ -1187,6 +1071,9 @@ class Model(SpyglassMixin, dj.Computed):
         )
 
         # Store training metadata in scratch space
+        # Store training metadata as JSON string (NWB-compatible)
+        import json
+
         training_metadata = {
             "model_id": metadata.model_id,
             "tool": "DLC",
@@ -1197,13 +1084,18 @@ class Model(SpyglassMixin, dj.Computed):
             "trainingsetindex": metadata.params.get("trainingsetindex", 0),
             "iteration": metadata.latest_model["iteration"],
             "trainFraction": metadata.latest_model["trainFraction"],
-            "snapshot": metadata.latest_model.get("snapshot"),
+            "snapshot": metadata.latest_model.get("snapshot", ""),
             "trained_date": metadata.latest_model["date_trained"].isoformat(),
-            "parent_id": metadata.parent_id,
+            "parent_id": metadata.parent_id or "",
             "skeleton_id": metadata.skeleton_id,
         }
 
-        nwbfile.add_scratch(training_metadata, name="model_training_metadata")
+        # Convert to JSON string for NWB storage
+        nwbfile.add_scratch(
+            data=json.dumps(training_metadata),
+            name="model_training_metadata",
+            description="Training metadata for position estimation model",
+        )
 
         # Write NWB file
         with NWBHDF5IO(str(nwb_path), mode="w") as nwb_io:
@@ -1211,13 +1103,36 @@ class Model(SpyglassMixin, dj.Computed):
 
         self._info_msg(f"Model metadata saved to NWB: {nwb_path}")
 
-        # Register NWB file in AnalysisNwbfile
-        analysis_key = AnalysisNwbfile().create(nwb_file_name)
-        if not analysis_key:
-            # File may already be registered
-            analysis_key = (
-                AnalysisNwbfile() & {"analysis_file_name": nwb_file_name}
-            ).fetch1("KEY")
+        # Register NWB file in AnalysisNwbfile using any available parent file
+        from spyglass.common import AnalysisNwbfile, Nwbfile
+
+        # Get any available NWB file as a dummy parent (foreign key requirement)
+        available_parents = Nwbfile().fetch("nwb_file_name")
+        if len(available_parents) == 0:
+            raise ValueError(
+                "No NWB files available to use as parent for AnalysisNwbfile"
+            )
+
+        dummy_parent = available_parents[0]
+        self._info_msg(
+            f"Using '{dummy_parent}' as dummy parent for analysis file"
+        )
+
+        # Register the already-created NWB file in AnalysisNwbfile
+        try:
+            AnalysisNwbfile().add(dummy_parent, nwb_file_name)
+            self._info_msg(f"Registered analysis file: {nwb_file_name}")
+        except Exception as e:
+            # File may already be registered, check if it exists
+            if (
+                len(AnalysisNwbfile() & {"analysis_file_name": nwb_file_name})
+                > 0
+            ):
+                self._info_msg(
+                    f"Analysis file already registered: {nwb_file_name}"
+                )
+            else:
+                raise e
 
         return nwb_file_name
 
@@ -1229,90 +1144,20 @@ class Model(SpyglassMixin, dj.Computed):
         vid_group: dict,
         sel_entry: dict,
     ) -> dict:
-        """Train a DLC model using focused helper methods.
+        """Legacy DLC training method - now delegates to strategy pattern.
 
-        Parameters
-        ----------
-        key : dict
-            ModelSelection key
-        params : dict
-            Training parameters from ModelParams
-        skeleton_id : str
-            Skeleton ID for this model
-        vid_group : dict
-            VidFileGroup entry
-        sel_entry : dict
-            Full ModelSelection entry
-
-        Returns
-        -------
-        dict
-            Model table entry with model_id, model_path, analysis_file_name
+        This method is deprecated and maintained for backwards compatibility.
+        New code should use the strategy pattern via make() method.
         """
-        if create_training_dataset is None or train_network is None:
-            raise ImportError(
-                "DeepLabCut is required for training. "
-                "Install with: pip install deeplabcut>=3.0"
-            )
+        from spyglass.position.utils.tool_strategies import DLCStrategy
 
-        # Validate project configuration
-        if "project_path" not in params:
-            raise ValueError(
-                "DLC training requires 'project_path' in ModelParams. "
-                "Please specify the DLC project directory."
-            )
-
-        project_path = Path(params["project_path"])
-        if not project_path.exists():
-            raise FileNotFoundError(f"DLC project not found: {project_path}")
-
-        config_path = project_path / "config.yaml"
-        if not config_path.exists():
-            raise FileNotFoundError(
-                f"DLC config.yaml not found in: {project_path}"
-            )
-
-        self._info_msg(f"Using DLC project: {project_path}")
-
-        # Load config
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
-
-        # Check for continued training
-        parent_id = sel_entry.get("parent_id")
-        if parent_id:
-            self._info_msg(
-                f"Continuing training from parent model: {parent_id}"
-            )
-
-        # Execute training pipeline
-        self._prepare_training_dataset(config_path, params, config)
-        self._execute_training(config_path, params)
-
-        # Localize and register trained model
-        model_path, model_id = self._localize_trained_model(config)
-        latest_model = self._get_latest_dlc_model_info(config)
-
-        nwb_file_name = self._register_model_metadata(
-            ModelMetadata(
-                model_id=model_id,
-                model_path=model_path,
-                project_path=project_path,
-                config_path=config_path,
-                params=params,
-                config=config,
-                latest_model=latest_model,
-                skeleton_id=skeleton_id,
-                parent_id=parent_id,
-            )
+        self._warn_msg(
+            "_make_dlc_model is deprecated. Use make() with tool='DLC' instead."
         )
 
-        # Return Model entry
-        return dict(
-            key,
-            model_id=model_id,
-            analysis_file_name=nwb_file_name,
-            model_path=_to_stored_path(model_path),
+        strategy = DLCStrategy()
+        return strategy.train_model(
+            key, params, skeleton_id, vid_group, sel_entry, self
         )
 
     def train(
@@ -1699,9 +1544,8 @@ class Model(SpyglassMixin, dj.Computed):
     ) -> Union["pd.DataFrame", None]:
         """Extract training history (loss curves) for a model.
 
-        Reads the learning_stats.csv file from DLC training output.
-
-        # TODO: Generalize to other tools
+        Reads CSV files from DLC training output with enhanced discovery.
+        Supports multiple CSV patterns and combines data from multiple files.
 
         Parameters
         ----------
@@ -1711,7 +1555,7 @@ class Model(SpyglassMixin, dj.Computed):
         Returns
         -------
         pd.DataFrame or None
-            DataFrame with columns: iteration, loss, learning_rate
+            DataFrame with columns: iteration, loss, learning_rate, source_file
             Returns None if training history not found
 
         Examples
@@ -1726,36 +1570,157 @@ class Model(SpyglassMixin, dj.Computed):
         if not (self & model_key):
             raise ValueError(f"Model not found: {model_key}")
 
-        # Get model path
+        # Get model path and try simple approach first
         model_entry = (self & model_key).fetch1()
         model_path = Path(model_entry["model_path"])
-
-        # model_path is the train/ directory (set by _make_dlc_model via
-        # _get_latest_dlc_model_info which returns pose_cfg.parent).
-        # learning_stats.csv lives in the same train/ directory.
         model_path = resolve_model_path(str(model_path))
+
+        # First try simple approach: learning_stats.csv in model directory
         stats_path = model_path / "learning_stats.csv"
 
-        if not stats_path.exists():
-            self._warn_msg(f"Training stats not found: {stats_path}")
+        if stats_path.exists():
+            try:
+                # Read CSV (format: iteration, loss, learning_rate)
+                df = pd.read_csv(
+                    stats_path,
+                    header=None,
+                    names=["iteration", "loss", "learning_rate"],
+                )
+                df["source_file"] = "learning_stats.csv"
+                self._logger.debug(
+                    f"Loaded {len(df)} training iterations from {stats_path}"
+                )
+                return df
+            except Exception as e:
+                self._warn_msg(f"Error reading {stats_path}: {e}")
+
+        # Enhanced discovery: try multiple patterns if simple approach fails
+        self._info_msg(
+            "Learning stats not found in standard location, trying enhanced discovery..."
+        )
+
+        # Expand search to parent directories for better CSV discovery
+        search_paths = [model_path, model_path.parent, model_path.parent.parent]
+
+        # Multiple CSV patterns for enhanced discovery
+        csv_patterns = [
+            "**/learning_stats.csv",
+            "**/log.csv",
+            "**/*training*.csv",
+        ]
+
+        all_csv_files = []
+        for search_path in search_paths:
+            if search_path.exists():
+                for pattern in csv_patterns:
+                    csv_files = list(search_path.glob(pattern))
+                    all_csv_files.extend(csv_files)
+                if all_csv_files:
+                    break  # Stop searching if we found files
+
+        if not all_csv_files:
+            self._warn_msg(
+                f"No training stats found in: {[str(p) for p in search_paths]}. "
+                f"Training may have been too short (displayiters > 0 required) or incomplete."
+            )
             return None
 
-        # Read CSV (format: iteration, loss, learning_rate)
-        df = pd.read_csv(
-            stats_path,
-            header=None,
-            names=["iteration", "loss", "learning_rate"],
-        )
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_csv_files = []
+        for f in all_csv_files:
+            if f not in seen:
+                seen.add(f)
+                unique_csv_files.append(f)
 
-        self._logger.debug(
-            f"Loaded {len(df)} training iterations from {stats_path}"
+        self._info_msg(f"Found {len(unique_csv_files)} training CSV file(s)")
+
+        # Try to read and combine the CSV files
+        training_data = []
+        for csv_file in unique_csv_files:
+            try:
+                df = pd.read_csv(csv_file)
+                if len(df) == 0:
+                    continue
+
+                # Handle different CSV formats
+                if df.shape[1] < 2:
+                    continue
+
+                # Standardize column names
+                df_clean = df.copy()
+                col_mapping = {}
+
+                # Map first two columns to iteration and loss
+                if len(df.columns) >= 2:
+                    col_mapping[df.columns[0]] = "iteration"
+                    col_mapping[df.columns[1]] = "loss"
+
+                # Look for learning rate column
+                lr_cols = [
+                    col
+                    for col in df.columns
+                    if "learning_rate" in col.lower() or "lr" in col.lower()
+                ]
+                if lr_cols:
+                    col_mapping[lr_cols[0]] = "learning_rate"
+                elif len(df.columns) >= 3:
+                    col_mapping[df.columns[2]] = "learning_rate"
+
+                df_clean = df_clean.rename(columns=col_mapping)
+
+                # Add source file info
+                relative_path = csv_file.relative_to(model_path.parent)
+                df_clean["source_file"] = str(relative_path)
+
+                training_data.append(df_clean)
+                self._info_msg(f"Loaded {len(df)} records from {relative_path}")
+
+            except Exception as e:
+                self._warn_msg(f"Error reading {csv_file.name}: {e}")
+
+        if not training_data:
+            self._warn_msg(
+                "No valid training data found in CSV files. "
+                "Ensure displayiters > 0 and check training logs for errors."
+            )
+            return None
+
+        # Combine all training data
+        combined_data = pd.concat(training_data, ignore_index=True)
+
+        # Sort by iteration if available
+        if "iteration" in combined_data.columns:
+            combined_data = combined_data.sort_values("iteration").reset_index(
+                drop=True
+            )
+
+        # Calculate and log improvement statistics
+        if "loss" in combined_data.columns and len(combined_data) > 0:
+            initial_loss = combined_data["loss"].iloc[0]
+            final_loss = combined_data["loss"].iloc[-1]
+            improvement = (
+                ((initial_loss - final_loss) / initial_loss) * 100
+                if initial_loss > 0
+                else 0
+            )
+            self._info_msg(
+                f"Training improvement: {improvement:.1f}% ({initial_loss:.6f} → {final_loss:.6f})"
+            )
+
+        self._info_msg(
+            f"Combined {len(combined_data)} training records from {len(training_data)} files"
         )
-        return df
+        return combined_data
 
     def plot_training_history(
         self, model_key: dict, save_path: Union[Path, str, None] = None
     ):
-        """Plot training loss curve for a model.
+        """Plot training loss curves for a model with enhanced visualization.
+
+        Displays training progress with enhanced visualization including
+        loss curves, improvement statistics, optional learning rate plotting,
+        and support for multiple data sources.
 
         Parameters
         ----------
@@ -1780,37 +1745,111 @@ class Model(SpyglassMixin, dj.Computed):
         """
         import matplotlib.pyplot as plt
 
-        history = self.get_training_history(model_key)
+        # Get training history with enhanced discovery
+        df = self.get_training_history(model_key)
 
-        if history is None:
+        if df is None:
             raise ValueError("No training history found for this model")
 
-        # Create plot
-        fig, ax = plt.subplots(figsize=(10, 6))
+        # Check available columns for flexible plotting
+        has_iteration = "iteration" in df.columns
+        has_loss = "loss" in df.columns
+        has_lr = "learning_rate" in df.columns
+        has_source = "source_file" in df.columns
 
-        ax.plot(history["iteration"], history["loss"], linewidth=2)
-        ax.set_xlabel("Training Iteration", fontsize=12)
-        ax.set_ylabel("Loss", fontsize=12)
-        ax.set_title(
+        if not has_loss:
+            raise ValueError("No loss data found to plot")
+
+        # Setup plot with subplots if learning rate available
+        n_plots = 2 if has_lr else 1
+        fig, axes = plt.subplots(
+            n_plots, 1, figsize=(10, 8 if n_plots == 2 else 6)
+        )
+        if n_plots == 1:
+            axes = [axes]  # Make it consistent
+
+        # X-axis: iteration if available, otherwise index
+        x_data = df["iteration"] if has_iteration else range(len(df))
+        x_label = "Training Iteration" if has_iteration else "Step"
+
+        # Plot 1: Loss curve
+        axes[0].plot(x_data, df["loss"], "b-", linewidth=2, alpha=0.8)
+        axes[0].set_xlabel(x_label, fontsize=12)
+        axes[0].set_ylabel("Loss", fontsize=12)
+        axes[0].set_title(
             f"Training Loss Curve: {model_key['model_id']}",
             fontsize=14,
             fontweight="bold",
         )
-        ax.grid(True, alpha=0.3)
+        axes[0].grid(True, alpha=0.3)
 
-        # Add final loss annotation
-        final_loss = history["loss"].iloc[-1]
-        final_iter = history["iteration"].iloc[-1]
-        ax.annotate(
-            f"Final: {final_loss:.4f}",
-            xy=(final_iter, final_loss),
-            xytext=(10, 10),
-            textcoords="offset points",
-            bbox=dict(boxstyle="round,pad=0.5", fc="yellow", alpha=0.7),
-            arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0"),
-        )
+        # Add improvement statistics to loss plot
+        if len(df) > 1 and has_loss:
+            initial_loss = df["loss"].iloc[0]
+            final_loss = df["loss"].iloc[-1]
+            min_loss = df["loss"].min()
+            improvement = (
+                ((initial_loss - final_loss) / initial_loss) * 100
+                if initial_loss > 0
+                else 0
+            )
+
+            # Add text box with statistics
+            stats_text = (
+                f"Initial: {initial_loss:.6f}\n"
+                f"Final: {final_loss:.6f}\n"
+                f"Best: {min_loss:.6f}\n"
+                f"Improvement: {improvement:.1f}%"
+            )
+            axes[0].text(
+                0.02,
+                0.98,
+                stats_text,
+                transform=axes[0].transAxes,
+                verticalalignment="top",
+                bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
+                fontsize=9,
+            )
+
+            # Add final loss annotation (original behavior)
+            if has_iteration:
+                final_iter = df["iteration"].iloc[-1]
+                axes[0].annotate(
+                    f"Final: {final_loss:.4f}",
+                    xy=(final_iter, final_loss),
+                    xytext=(10, 10),
+                    textcoords="offset points",
+                    bbox=dict(boxstyle="round,pad=0.5", fc="yellow", alpha=0.7),
+                    arrowprops=dict(
+                        arrowstyle="->", connectionstyle="arc3,rad=0"
+                    ),
+                )
+
+        # Plot 2: Learning rate (if available)
+        if has_lr and n_plots == 2:
+            axes[1].plot(
+                x_data, df["learning_rate"], "r-", linewidth=2, alpha=0.8
+            )
+            axes[1].set_xlabel(x_label, fontsize=12)
+            axes[1].set_ylabel("Learning Rate", fontsize=12)
+            axes[1].set_title(
+                "Learning Rate Schedule", fontsize=14, fontweight="bold"
+            )
+            axes[1].grid(True, alpha=0.3)
+            axes[1].set_yscale("log")  # Learning rate often better on log scale
+
+        # Add source file information if available
+        if has_source:
+            unique_sources = df["source_file"].nunique()
+            if unique_sources > 1:
+                source_text = f"Data from {unique_sources} files: {', '.join(df['source_file'].unique())}"
+                fig.suptitle(source_text, fontsize=10, y=0.02)
 
         plt.tight_layout()
+
+        # Add some spacing if we have subtitle
+        if has_source:
+            plt.subplots_adjust(bottom=0.08)
 
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
@@ -1820,6 +1859,33 @@ class Model(SpyglassMixin, dj.Computed):
             plt.show()
 
         return fig
+
+    def _get_latest_dlc_model_info(self, config: dict) -> dict:
+        """Get latest trained DLC model information (wrapper for DLCStrategy).
+
+        This is a compatibility method that delegates to the DLCStrategy
+        implementation for discovering trained DLC models.
+
+        Parameters
+        ----------
+        config : dict
+            DLC configuration dictionary containing 'project_path' key
+
+        Returns
+        -------
+        dict
+            Dictionary with keys: path, iteration, trainFraction, shuffle, date_trained
+            Returns empty dict {} if no trained models exist.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the project_path does not exist
+        """
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
+        strategy = DLCStrategy()
+        return strategy._get_latest_dlc_model_info(config)
 
     def load(
         self,
@@ -2470,55 +2536,6 @@ class Model(SpyglassMixin, dj.Computed):
             self._err_msg(f"Errors: {errors}")
 
         return result
-
-    def _get_latest_dlc_model_info(self, config: dict) -> dict:
-        """Given a DLC project path, return available model info
-
-        Parameters
-        ----------
-        config : dict
-            DLC project configuration dictionary, including project_path.
-
-        Returns
-        -------
-        OrderedDict
-            Dictionary with model paths as keys and dictionaries as values. Each
-            value dictionary contains 'iteration', 'trainFraction', 'shuffle',
-            and 'date_trained'.
-        """
-
-        project_path = Path(config["project_path"])
-        if not project_path.exists() or not project_path.is_dir():
-            raise FileNotFoundError(f"Invalid project path: {project_path}")
-
-        # Regex to extract iteration, train fraction, and shuffle
-        # EG: dlc-models/iteration-0/TESTSep8-trainset80shuffle1/
-        re_pattern = re.compile(r"iteration-(\d+)/.*-trainset(\d+)shuffle(\d+)")
-
-        latest_model = None
-        for pose_cfg in project_path.rglob("pose_cfg.yaml"):
-            try:
-                # Extract metadata from the relative path
-                match = re.search(re_pattern, str(pose_cfg.parent))
-                if not match:
-                    continue
-                date_trained = datetime.fromtimestamp(pose_cfg.stat().st_mtime)
-                if (
-                    latest_model
-                    and date_trained <= latest_model["date_trained"]
-                ):
-                    continue  # Skip if not the latest model
-                iteration, train_fraction, shuffle = map(int, match.groups())
-                latest_model = {
-                    "path": pose_cfg.parent,
-                    "iteration": iteration,
-                    "trainFraction": train_fraction / 100,
-                    "shuffle": shuffle,
-                    "date_trained": date_trained,
-                }
-            except (IndexError, ValueError):
-                continue  # Skip files that don't match the expected pattern
-        return latest_model or dict()
 
     def run_inference(
         self,

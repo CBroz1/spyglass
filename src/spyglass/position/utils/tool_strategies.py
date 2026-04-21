@@ -410,9 +410,111 @@ class DLCStrategy(PoseToolStrategy):
         sel_entry: dict,
         model_instance,
     ) -> dict:
-        """Train DLC model using existing _make_dlc_model method."""
-        return model_instance._make_dlc_model(
-            key, params, skeleton_id, vid_group, sel_entry
+        """Train DLC model with tool-specific logic.
+
+        Parameters
+        ----------
+        key : dict
+            ModelSelection key
+        params : dict
+            Training parameters from ModelParams
+        skeleton_id : str
+            Skeleton ID for this model
+        vid_group : dict
+            VidFileGroup entry
+        sel_entry : dict
+            Full ModelSelection entry
+        model_instance
+            Model table instance for logging/utilities
+
+        Returns
+        -------
+        dict
+            Model table entry with model_id, model_path, analysis_file_name
+        """
+        from pathlib import Path
+
+        import yaml
+
+        # Import DLC functions (defer to avoid startup dependency)
+        try:
+            from deeplabcut import create_training_dataset, train_network
+        except ImportError:
+            raise ImportError(
+                "DeepLabCut is required for training. "
+                "Install with: pip install deeplabcut>=3.0"
+            )
+
+        # Import utility functions from Model class
+        from spyglass.position.utils import suppress_print_from_package
+        from spyglass.position.v2.train import (
+            ModelMetadata,
+            _to_stored_path,
+            default_pk_name,
+        )
+
+        # Validate project configuration
+        if "project_path" not in params:
+            raise ValueError(
+                "DLC training requires 'project_path' in ModelParams. "
+                "Please specify the DLC project directory."
+            )
+
+        project_path = Path(params["project_path"])
+        if not project_path.exists():
+            raise FileNotFoundError(f"DLC project not found: {project_path}")
+
+        config_path = project_path / "config.yaml"
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"DLC config.yaml not found in: {project_path}"
+            )
+
+        model_instance._info_msg(f"Using DLC project: {project_path}")
+
+        # Load config
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        # Check for continued training
+        parent_id = sel_entry.get("parent_id")
+        if parent_id:
+            model_instance._info_msg(
+                f"Continuing training from parent model: {parent_id}"
+            )
+
+        # Execute training pipeline
+        self._prepare_training_dataset(
+            config_path, params, config, model_instance
+        )
+        self._execute_training(config_path, params, model_instance)
+
+        # Localize and register trained model
+        model_path, model_id = self._localize_trained_model(
+            config, model_instance
+        )
+        latest_model = self._get_latest_dlc_model_info(config)
+
+        nwb_file_name = model_instance._register_model_metadata(
+            ModelMetadata(
+                model_id=model_id,
+                model_path=model_path,
+                project_path=project_path,
+                config_path=config_path,
+                params=params,
+                config=config,
+                latest_model=latest_model,
+                skeleton_id=skeleton_id,
+                parent_id=parent_id,
+            )
+        )
+
+        # Return Model entry
+        return dict(
+            key,
+            model_id=model_id,
+            analysis_file_name=nwb_file_name,
+            model_path=_to_stored_path(model_path),
         )
 
     def evaluate_model(
@@ -542,6 +644,301 @@ class DLCStrategy(PoseToolStrategy):
             result_params["project_path"] = str(model_path.parent)
 
         return result_params
+
+    def _get_latest_dlc_model_info(self, config: dict) -> dict:
+        """Get latest trained DLC model information from project directory.
+
+        Discovers trained models in the DLC project's dlc-models directory structure.
+        Returns information about the most recently modified model, or empty dict if
+        no trained models are found.
+
+        Parameters
+        ----------
+        config : dict
+            DLC configuration dictionary containing 'project_path' key
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+            - path : str - Path to the model's train directory
+            - iteration : int - Model iteration number
+            - trainFraction : float - Training fraction (0.0-1.0)
+            - shuffle : int - Shuffle number
+            - date_trained : datetime - Date model was last modified
+
+            Returns empty dict {} if no trained models exist.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the project_path does not exist
+        """
+        import re
+        from datetime import datetime
+        from pathlib import Path
+
+        import yaml
+
+        # Validate project exists
+        project_path = Path(config["project_path"])
+        if not project_path.exists():
+            raise FileNotFoundError(f"DLC project not found: {project_path}")
+
+        # Look for dlc-models directory
+        dlc_models_dir = project_path / "dlc-models"
+        if not dlc_models_dir.exists():
+            return {}
+
+        # Find all iteration directories (iteration-0, iteration-1, etc.)
+        iteration_dirs = sorted(dlc_models_dir.glob("iteration-*"))
+        if not iteration_dirs:
+            return {}
+
+        # Collect all model directories with their metadata
+        models_found = []
+
+        for iter_dir in iteration_dirs:
+            # Extract iteration number from directory name
+            iter_match = re.search(r"iteration-(\d+)", iter_dir.name)
+            if not iter_match:
+                continue
+            iteration = int(iter_match.group(1))
+
+            # Find model folders (e.g., TESTv2-Nov12-trainset80shuffle1)
+            # Pattern: TASK-trainsetXshuffleY
+            model_dirs = list(iter_dir.glob("*trainset*shuffle*"))
+
+            for model_dir in model_dirs:
+                # Extract trainFraction and shuffle from directory name
+                # e.g., "TESTv2-Nov12-trainset80shuffle1" -> trainset=80%, shuffle=1
+                shuffle_match = re.search(r"shuffle(\d+)", model_dir.name)
+                trainset_match = re.search(r"trainset(\d+)", model_dir.name)
+
+                if not (shuffle_match and trainset_match):
+                    continue
+
+                shuffle = int(shuffle_match.group(1))
+                trainset_pct = int(trainset_match.group(1))
+                train_fraction = trainset_pct / 100.0
+
+                # Check for train directory containing pose_cfg.yaml
+                train_dir = model_dir / "train"
+                if not train_dir.exists():
+                    continue
+
+                pose_cfg = train_dir / "pose_cfg.yaml"
+                if not pose_cfg.exists():
+                    continue
+
+                # Get modification time of pose_cfg.yaml as training date
+                mtime = pose_cfg.stat().st_mtime
+                date_trained = datetime.fromtimestamp(mtime)
+
+                models_found.append(
+                    {
+                        "path": str(train_dir),
+                        "iteration": iteration,
+                        "trainFraction": train_fraction,
+                        "shuffle": shuffle,
+                        "date_trained": date_trained,
+                        "mtime": mtime,  # For sorting
+                    }
+                )
+
+        if not models_found:
+            return {}
+
+        # Return the most recently modified model
+        latest = max(models_found, key=lambda x: x["mtime"])
+
+        # Remove the temporary sorting key
+        result = {
+            "path": latest["path"],
+            "iteration": latest["iteration"],
+            "trainFraction": latest["trainFraction"],
+            "shuffle": latest["shuffle"],
+            "date_trained": latest["date_trained"],
+        }
+
+        return result
+
+    def _prepare_training_dataset(
+        self, config_path: Path, params: dict, config: dict, model_instance
+    ) -> None:
+        """Prepare DLC training dataset using create_training_dataset."""
+        from spyglass.position.utils import get_param_names, test_mode_suppress
+
+        # Check DLC version for Engine enum support
+        try:
+            from deeplabcut.core.engine import Engine as _Engine
+
+            _dlc3 = True
+        except ImportError:
+            _dlc3 = False
+
+        def _to_engine(val):
+            """Convert string engine name to Engine enum for DLC 3.x."""
+            if _dlc3 and isinstance(val, str):
+                return _Engine(val)
+            return val
+
+        # Import create_training_dataset with deferred import
+        from deeplabcut import create_training_dataset
+
+        # Filter parameters to only those accepted by create_training_dataset
+        training_dataset_kwargs = {
+            k: v
+            for k, v in params.items()
+            if k in get_param_names(create_training_dataset)
+        }
+
+        # Convert engine parameter for DLC 3.x
+        if "engine" in training_dataset_kwargs:
+            training_dataset_kwargs["engine"] = _to_engine(
+                training_dataset_kwargs["engine"]
+            )
+
+        model_instance._info_msg("Creating DLC training dataset...")
+
+        with test_mode_suppress():
+            create_training_dataset(str(config_path), **training_dataset_kwargs)
+
+    def _execute_training(
+        self, config_path: Path, params: dict, model_instance
+    ) -> None:
+        """Execute DLC model training using train_network."""
+        from spyglass.position.utils import (
+            get_param_names,
+            suppress_print_from_package,
+            test_mode_suppress,
+        )
+
+        # Check DLC version for Engine enum support
+        try:
+            from deeplabcut.core.engine import Engine as _Engine
+
+            _dlc3 = True
+        except ImportError:
+            _dlc3 = False
+
+        def _to_engine(val):
+            """Convert string engine name to Engine enum for DLC 3.x."""
+            if _dlc3 and isinstance(val, str):
+                return _Engine(val)
+            return val
+
+        # Import train_network with deferred import
+        from deeplabcut import train_network
+
+        # Filter parameters to only those accepted by train_network
+        train_network_kwargs = {
+            k: v
+            for k, v in params.items()
+            if k in get_param_names(train_network)
+        }
+
+        # Convert engine parameter for DLC 3.x
+        if "engine" in train_network_kwargs:
+            train_network_kwargs["engine"] = _to_engine(
+                train_network_kwargs["engine"]
+            )
+
+        # Convert string parameters to integers
+        for k in ["shuffle", "trainingsetindex", "maxiters"]:
+            if value := train_network_kwargs.get(k):
+                train_network_kwargs[k] = int(value)
+
+        # Test mode adjustments
+        test_mode = params.get("test_mode", False)
+        if test_mode:
+            train_network_kwargs["maxiters"] = 2
+            if _dlc3:  # DLC 3.x PyTorch uses epochs instead of maxiters
+                train_network_kwargs.setdefault("epochs", 1)
+                train_network_kwargs.setdefault("save_epochs", 1)
+
+        model_instance._info_msg("Starting DLC model training...")
+
+        try:
+            with suppress_print_from_package():
+                train_network(str(config_path), **train_network_kwargs)
+        except KeyboardInterrupt:  # pragma: no cover
+            model_instance._info_msg(
+                "DLC training stopped via Keyboard Interrupt"
+            )
+        except Exception as e:
+            msg = str(e)
+            # Handle DLC end-of-training gracefully
+            hit_end_of_train = ("CancelledError" in msg) and (
+                "fifo_queue_enqueue" in msg
+            )
+            if not hit_end_of_train:
+                raise
+
+    def _localize_trained_model(
+        self, config: dict, model_instance
+    ) -> tuple[Path, str]:
+        """Localize the trained model and generate model ID."""
+        import os
+        from datetime import datetime
+
+        from deeplabcut.utils import get_model_folder
+        from deeplabcut.utils.auxiliaryfunctions import read_config
+
+        from spyglass.position.v2.train import default_pk_name
+
+        project_path = Path(config["project_path"])
+        config_path = project_path / "config.yaml"
+
+        # Read the DLC config to get the correct structure
+        dlc_config = read_config(str(config_path))
+
+        # Get the model directory from DLC
+        model_dir = project_path / get_model_folder(
+            trainFraction=dlc_config.get("TrainingFraction", [0.95])[
+                0
+            ],  # Get first training fraction with default
+            shuffle=dlc_config.get("shuffle", 1),  # Default shuffle number
+            cfg=dlc_config,
+            modelprefix=dlc_config.get("modelprefix", ""),
+        )
+
+        train_dir = model_dir / "train"
+        if not train_dir.exists():
+            raise FileNotFoundError(
+                f"Training directory not found: {train_dir}"
+            )
+
+        # Find latest snapshot file
+        snapshots = list(train_dir.glob("*index*"))
+
+        if not snapshots:
+            # In test mode or if training failed, there may be no snapshots
+            model_instance._warn_msg("No snapshot files found after training")
+            latest_snapshot = 0
+        else:
+            # Find most recently modified snapshot
+            latest_snapshot = 0
+            max_modified_time = 0
+            for snapshot in snapshots:
+                modified_time = os.path.getmtime(snapshot)
+                if modified_time > max_modified_time:
+                    # Extract snapshot number from filename (skip "snapshot-" prefix)
+                    latest_snapshot = int(snapshot.stem[9:])
+                    max_modified_time = modified_time
+
+        # Generate model ID
+        timestamp = datetime.now().strftime("%Y%m%d")
+        model_id = default_pk_name(f"mdl-{timestamp}")
+
+        model_instance._info_msg(
+            f"Located trained model - snapshot: {latest_snapshot}, "
+            f"model_id: {model_id}"
+        )
+
+        # Return the config path as the model path (standard DLC pattern)
+        config_path = project_path / "config.yaml"
+        return config_path, model_id
 
 
 class SLEAPStrategy(PoseToolStrategy):

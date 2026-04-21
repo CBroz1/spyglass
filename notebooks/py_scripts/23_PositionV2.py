@@ -13,7 +13,7 @@
 # ---
 
 # %% [markdown]
-# ## Position V2 - Streamlined Pose Estimation Pipeline
+# ## Position Pipeline V2
 #
 
 # %% [markdown]
@@ -48,6 +48,7 @@
 # This tutorial will walk through:
 #
 # - Importing a trained model (DLC or ndx-pose)
+# - Training an existing model
 # - Running pose estimation on videos
 # - Processing pose data (orientation, centroid, smoothing)
 # - Retrieving and visualizing results
@@ -57,7 +58,7 @@
 # ### Table of Contents
 
 # %% [markdown]
-# #### Core Tutorial (Essential)
+# #### Core Tutorial
 #
 # - [Setup](#Setup) - Environment configuration
 #     - Load packages & configure environment
@@ -66,6 +67,10 @@
 #     - Import DLC project (`config.yaml`) or NWB file (`ndx-pose`)
 #     - Verify skeleton and bodyparts
 #     - Create video file groups
+# - [Training Demo](#MVPTraining) - Quick training demonstration
+#     - Minimal model training setup
+#     - Training loss curve visualization
+#     - Understand training workflow
 # - [Pose Estimation](#PoseEstim) - Run inference on videos
 #     - Configure inference parameters (e.g., device, batch size)
 #     - Set up estimation task
@@ -81,20 +86,16 @@
 #     - Fetch processed data
 #     - Generate trajectory plots
 #     - Analyze time series
-# - [MVP Training Demo](#MVPTraining) - Quick training demonstration
-#     - Minimal model training setup
-#     - Training loss curve visualization
-#     - Understand training workflow
 #
-# #### ADVANCED FEATURES (Optional)
+# #### Advanced Features
 #
 # - [Training New Models](#TrainingWorkflow) - Custom model development
 # - [Model Evaluation](#ModelEvaluation) - Training curves and performance metrics
 # - [Video Generation](#VideoGeneration) - Create annotated outputs
 #
-# #### REFERENCE
+# #### Reference
 #
-# - [🚨 Troubleshooting](#Troubleshooting) - Common issues & solutions
+# - [Troubleshooting](#Troubleshooting) - Common issues & solutions
 # - [V1→V2 Migration](#Migration) - Upgrade guide
 # - [External Resources](#Resources) - Documentation links
 # - [Multi-Tool Support](#MultiTool) - SLEAP integration status
@@ -133,6 +134,7 @@ os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 
 dj.config.load("../dj_local_conf_pv2.json")  # TODO: CHANGE BEFORE MERGE
+print(dj.conn(reset=True))
 
 from spyglass.common import Session, VideoFile
 from spyglass.position.v2 import video, train, estim
@@ -194,7 +196,7 @@ dj.Diagram(video) + dj.Diagram(train) + dj.Diagram(estim)
 #     orientation and smoothing.
 
 # %% [markdown]
-# ## Model Import - Existing Models <a id="Model"></a>
+# ## Model Import <a id="Model"></a>
 
 # %% [markdown]
 # **Goal**: Load a pre-trained pose estimation model into Spyglass
@@ -216,9 +218,6 @@ dj.Diagram(video) + dj.Diagram(train) + dj.Diagram(estim)
 # Let's start by looking at the Model table:
 #
 
-# %%
-Model()
-
 # %% [markdown]
 # #### From DeepLabCut Project
 #
@@ -234,12 +233,12 @@ Model()
 
 # %% [markdown]
 # > **Session prerequisite** — `import_model()` calls
-# > `VidFileGroup.create_from_dlc_config()` internally, which requires a
-# > Spyglass `Session` whose `nwb_file_name` stem appears in the DLC config's
-# > video paths. In production, run `insert_sessions('your_training_session.nwb')`
-# > first.
+# > `VidFileGroup.create_from_dlc_config()` internally. If a corresponding
+# > `Session` already exists, great. If not, it makes some guesses based on
+# > `nwb_file_name` stems in video paths. In production, run
+# > `insert_sessions('your_training_session.nwb')` > first.
 # >
-# > For this tutorial, `_tutorial_bootstrap_dlc_session()` (defined below)
+# > For this tutorial, `_tutorial_bootstrap_dlc_session()`
 # > creates minimal dummy entries so the import can proceed without a recorded
 # > session.
 # >
@@ -454,7 +453,8 @@ if config_path.exists():
 if not (Model() & model_key):
     raise ValueError(f"❌ Model entry not found : {model_key}")
 
-if not (model_params := (ModelParams() & model_key).fetch1()):
+model_params_dict = dict(model_params_id=model_key["model_params_id"])
+if not (model_params := (ModelParams() & model_params_dict).fetch1()):
     raise ValueError(f"❌ Model parameters not found : {model_key}")
 
 skeleton_id = model_params.get("skeleton_id")
@@ -466,10 +466,6 @@ if vid_group_id := model_key.get("vid_group_id"):
         raise ValueError(f"❌ Video group not found: {vid_group_id}")
 
 print("✅ Model import successful")
-
-# %%
-# Check the model entry
-Model() & model_key
 
 # %% [markdown]
 # This import process generates a video group based on the config.
@@ -551,7 +547,14 @@ except ImportError:
     )
 
 # %% [markdown]
-# ## 🎯 Pose Estimation <a id="PoseEstim"></a>
+# ## Model Training <a id="MVPTraining"></a>
+#
+
+# %% [markdown]
+# ## Pose Estimation <a id="PoseEstim"></a>
+#
+
+# %% [markdown]
 #
 # **🎯 Goal**: Run pose inference on videos using the imported model
 #
@@ -709,7 +712,7 @@ print(pose_df.head())
 
 # %% [markdown]
 # <details>
-# <summary>🚨 **Troubleshooting Pose Estimation** (Click if you encountered errors)</summary>
+# <summary>🚨 <b>Troubleshooting Pose Estimation</b> (Click if you encountered errors)</summary>
 #
 # ### Common Issues & Solutions
 #
@@ -763,6 +766,9 @@ print(pose_df.head())
 
 # %% [markdown]
 # ## Processing Parameters <a id="PoseParams"></a>
+#
+
+# %% [markdown]
 #
 # **Goal**: Configure how raw pose data is processed into final trajectories
 #
@@ -865,7 +871,10 @@ print("✅ Created pose parameters using standard DataJoint interface")
 PoseParams & {"params.smoothing.interp_params": "max_pts_to_interp"}
 
 # %% [markdown]
-# ## 🔄 Data Processing <a id="PoseV2"></a>
+# ## Data Processing <a id="PoseV2"></a>
+#
+
+# %% [markdown]
 #
 # **🎯 Goal**: Process raw pose estimates into final position trajectories
 #
@@ -874,11 +883,6 @@ PoseParams & {"params.smoothing.interp_params": "max_pts_to_interp"}
 # - Run the position processing pipeline
 # - Generate orientation, centroid, and velocity data
 # - Validate the final processed dataset
-
-# %% [markdown]
-# ## Pose Processing <a id="PoseEstim"></a>
-#
-# Now we can process the pose estimation to get cleaned, smoothed position data.
 
 # %% [markdown]
 # #### Create Processing Selection
@@ -965,7 +969,16 @@ print("✅ Validation passed")
 print(f"Duration: {time_range:.1f}s, Mean velocity: {mean_vel:.1f} cm/s")
 
 # %% [markdown]
-# ## 📊 Data Analysis & Retrieval <a id="FetchData"></a>
+# ## Data Analysis & Retrieval <a id="FetchData"></a>
+
+# %% [markdown]
+# **🎯 Goal**: Access processed position data for analysis and visualization
+#
+# **🔍 What you'll accomplish**:
+# - Retrieve data as pandas DataFrames or raw NWB objects
+# - Generate trajectory and time series visualizations
+# - Understand data structure and coordinate systems
+# - Export results for further analysis
 
 # %% [markdown]
 # ### [Visualization](#TableOfContents) <a id="Visualization"></a>
@@ -1039,97 +1052,159 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# **🎯 Goal**: Access processed position data for analysis and visualization
 #
-# **🔍 What you'll accomplish**:
-# - Retrieve data as pandas DataFrames or raw NWB objects
-# - Generate trajectory and time series visualizations
-# - Understand data structure and coordinate systems
-# - Export results for further analysis
-
-# %% [markdown]
-# ## 🏃‍♂️ MVP Training Demo <a id="MVPTraining"></a>
-#
-# **🎯 Goal**: Understand training workflow through position v1 test examples
+# **🎯 Goal**: Understand training workflow
 #
 # **🔍 What you'll learn**:
-# - Examine real training configurations used in tests
 # - See minimal parameter sets for demonstration purposes
 # - Understand training workflow without running full training
-# - Review test-based training examples with actual DLC integration
 #
-# ### Training Examples in Position V1 Tests
+# **Core Components:**
+# - **ModelParams**: Training configuration and hyperparameters
+# - **ModelSelection**: Links parameters, video data, and skeleton definitions
+# - **Model**: Executes training and stores results
 #
-# The Position V1 test suite includes comprehensive examples of MVP training with minimal configurations. These tests demonstrate:
-#
-# - **Minimal Training Parameters**: Short iteration counts for CI/testing
-# - **Real DLC Integration**: Actual DeepLabCut training workflows
-# - **Training Pipeline**: Complete end-to-end model development
-# - **Validation Patterns**: How to verify training completed successfully
-#
-# **Key test files to examine**:
-# - `tests/position/v1/test_dlc_training.py` - Core training workflows
-# - `tests/position/v1/conftest.py` - Training configuration fixtures
-# - Test training uses ~100-500 iterations vs production 10,000+
-#
-# ```python
-# # Example from position v1 tests - minimal training configuration
-# training_params = {
-#     "max_iters": 100,           # Very low for testing
-#     "display_iters": 50,        # Show progress
-#     "save_iters": 100,          # Save at end only
-#     "net_type": "resnet_50",    # Standard architecture
-#     "batch_size": 1,            # Minimal batch
-# }
-# ```
-#
-# 💡 **For production training**: Use the [Training New Models](#TrainingWorkflow) section with 10,000+ iterations and proper validation datasets.
+# **Key Methods:**
+# - `Model().train(model_key, **params)` - Continue training existing models
+# - `Model().get_training_history(model_key)` - Retrieve training metrics
+# - `Model().plot_training_history(model_key)` - Visualize training curves
 
 # %% [markdown]
-# ### Exploring Test-Based Training Examples
+# ### Configuration
 #
-# You can examine the actual training configurations used in the test suite:
+# Set up training parameters for minimal demonstration with training curve visualization (5 iterations):
 
 # %%
-# Examine training parameters from position v1 tests
-from pathlib import Path
+# Configure training parameters for minimal training curve demonstration
+minimal_training_params = {
+    "trainingsetindex": 0,
+    "shuffle": 1,
+    "gputouse": None,  # Auto-detect available GPU
+    "TFGPUinference": False,
+    "net_type": "resnet_50",  # Standard architecture
+    "augmenter_type": "imgaug",
+    "maxiters": 10,  # Very low for quick demo - may cause TensorFlow errors
+    "displayiters": 1,  # Write data every iteration for training curve
+    "saveiters": 2,  # Save checkpoint every 2 iterations
+    "project_path": str(config_path.parent),
+}
+model_tool = "DLC"  # Explicitly specify DLC for training
 
-# Show path to training test examples
-test_dir = Path("tests/position/v1/")
-training_tests = ["test_dlc_training.py", "test_dlc_project.py"]
+# Set up model parameters ID for the training
+mvp_params_name = "mvp_demo_10iter"
 
-print("📋 Position V1 Training Test Examples:")
-print(f"Location: {test_dir}")
-print("\nKey files:")
-for test_file in training_tests:
-    test_path = test_dir / test_file
-    if test_path.exists():
-        print(f"✅ {test_file} - {test_path}")
-    else:
-        print(f"📁 {test_file} - (check repository for location)")
+training_params_insert = {
+    "model_params_id": mvp_params_name,
+    "params": minimal_training_params,
+    "tool": model_tool,
+    "skeleton_id": skeleton_id,  # Required field for ModelParams
+}
 
-print("\n🔍 To explore training configurations:")
-print("1. Look at test fixtures in conftest.py")
-print("2. Examine training parameter dictionaries")
-print("3. See minimal iteration counts used for testing")
-print("4. Understand validation patterns")
+mvp_selection_key = {
+    "model_params_id": mvp_params_name,
+    "tool": model_tool,
+    "vid_group_id": training_vid_group_id,  # Single vid_group_id, not array
+    "parent_id": None,  # No parent model for this demo
+}
 
-print("\n💡 Key differences from production:")
-print("   • Test iterations: 100-500 vs Production: 10,000+")
-print("   • Test batch size: 1-2 vs Production: 8-32")
-print("   • Test duration: 1-5 minutes vs Production: hours")
+# Validate prerequisites
+if "model_tool" not in locals() or model_tool == "UNSPECIFIED":
+    model_tool = "DLC"  # Set explicitly for training
+
+if not ("skeleton_id" in locals() and skeleton_id):
+    raise ValueError("❌ skeleton_id required - import model first")
+
+if not config_path:
+    raise ValueError("❌ config_path required - check model import")
+
+if not training_vid_group_id:
+    raise ValueError("❌ training_vid_group_id required - import model first")
+
 print(
-    "   • Test datasets: Synthetic/minimal vs Production: thousands of frames"
+    f"🔧 Training config: {model_tool}/{minimal_training_params['net_type']}, "
+    + f"{minimal_training_params['maxiters']} iterations"
 )
 
 # %% [markdown]
-# # 🔧 ADVANCED FEATURES
+# ### Execution
 #
-# The following sections cover optional advanced functionality. Most users can skip these sections and return later as needed.
+# Run the actual DLC training with our minimal configuration:
+#
+# ⚠️ **Note**: Low iteration count during demo may raise TensorFlow errors.
+# This is expected behavior for demonstration purposes.
+
+# %%
+# Validate training prerequisites
+ModelParams.insert1(training_params_insert, skip_duplicates=True)
+
+# Create model selection using correct field names for ModelSelection table
+ModelSelection.insert1(mvp_selection_key, skip_duplicates=True)
+
+# Execute training using the selection key
+if len(Model & mvp_selection_key) > 0:
+    print(f"ℹ️ Model '{mvp_params_name}' already exists - skipping training")
+else:
+    print("🏃 Starting MVP training ...")
+    Model.populate(mvp_selection_key, display_progress=True)
+    print(f"✅ Model '{mvp_params_name}' trained and saved")
 
 # %% [markdown]
-# ## 💡 Training New Models <a id="TrainingWorkflow"></a>
+# ### Results
 #
+# Verify the trained model and display training outcomes:
+
+# %%
+# Verify successful training and display results
+trained_models = Model & mvp_selection_key
+if len(trained_models) == 0:
+    raise ValueError(
+        "❌ No model found for selection key - run training execution cell again"
+    )
+
+# Training completed successfully
+model_entry = trained_models.fetch1()
+print(f"✅ Model '{model_entry['model_id']}' ready for pose estimation")
+
+# %% [markdown]
+# ### Training Progress
+#
+# Visualize training loss curves:
+
+# %%
+# 📊 Training Progress Visualization
+# Enhanced training history with improved CSV discovery and visualization
+
+if "model_entry" not in locals():
+    raise ValueError(
+        "❌ model_entry not found - run results verification cell first"
+    )
+
+mvp_model_id = model_entry["model_id"]
+mvp_model_key = {"model_id": mvp_model_id}
+
+# Get training history using enhanced core methods
+# These methods try simple discovery first, then enhanced patterns if needed
+training_history = Model().get_training_history(mvp_model_key)
+
+if len(training_history) == 0:
+    raise ValueError("❌ No training history found")
+
+# Display enhanced training visualization
+fig = Model().plot_training_history(mvp_model_key)
+
+# %% [markdown]
+# # Advanced Features
+#
+
+# %% [markdown]
+# The following sections cover optional advanced functionality. Most users can
+# skip these sections and return later as needed.
+
+# %% [markdown]
+# ## New Models <a id="TrainingWorkflow"></a>
+#
+
+# %% [markdown]
 # **🎯 Goal**: Train custom pose estimation models from scratch
 #
 # **🔍 What you'll accomplish**:
@@ -1208,14 +1283,18 @@ print(
 # ---
 
 # %% [markdown]
-# ## 📊 Model Evaluation & Training Curves <a id="ModelEvaluation"></a>
+# ## Model Evaluation <a id="ModelEvaluation"></a>
+#
+
+# %% [markdown]
 #
 # **🎯 Goal**: Evaluate model performance and visualize training progress
 #
 # **🔍 What you'll accomplish**:
 # - Assess model accuracy on test data
-# - Generate training and validation loss curves
+# - Generate comprehensive training and validation loss curves
 # - Understand model convergence and potential overfitting
+# - Monitor learning rate schedules and optimization progress
 # - Compare multiple models or training configurations
 #
 # ### Background
@@ -1245,27 +1324,99 @@ evaluation_supported = model_tool.upper() == "DLC"
 # Visualize training progress and detect potential overfitting:
 
 # %%
+# Enhanced training curves visualization
 if not (has_training_history and evaluation_supported):
     raise ValueError("⚠️ Model evaluation unavailable. Train a model first.")
 
+# Get training history for the trained model
+training_history = Model().get_training_history(model_key)
+
+if len(training_history) < 1:
+    raise ValueError("❌ No training history data available for this model")
+
+# Use built-in plotting method for comprehensive visualization
 fig = Model().plot_training_history(model_key, save_path=None, figsize=(12, 8))
-fig.show()
 
-# %% [markdown]
-# ### Model Performance Evaluation
-#
-# Assess accuracy on test data and compare models:
+# Additional custom plotting for detailed analysis
+import matplotlib.pyplot as plt
 
-# %%
-if not evaluation_supported:
-    print(f"⚠️ Model evaluation not supported for tool: {model_tool}")
-    # Early return pattern - no further processing needed
+fig2, axes = plt.subplots(2, 2, figsize=(14, 10))
+fig2.suptitle("Detailed Training Analysis", fontsize=16, fontweight="bold")
 
-print("📊 Model evaluation methods coming soon...")
-# Future: Model.evaluate(), comparison metrics, etc.
+# Loss curve with enhanced styling
+axes[0, 0].plot(
+    training_history.index,
+    training_history["loss"],
+    linewidth=2,
+    alpha=0.8,
+    color="blue",
+)
+axes[0, 0].set_title("Training Loss", fontsize=12, fontweight="bold")
+axes[0, 0].set_xlabel("Iteration")
+axes[0, 0].set_ylabel("Loss")
+axes[0, 0].grid(True, alpha=0.3)
 
-# %% [markdown]
-# ---
+# Learning rate schedule with log scale
+if "learning_rate" in training_history.columns:
+    axes[0, 1].plot(
+        training_history.index,
+        training_history["learning_rate"],
+        linewidth=2,
+        alpha=0.8,
+        color="red",
+    )
+    axes[0, 1].set_title(
+        "Learning Rate Schedule", fontsize=12, fontweight="bold"
+    )
+    axes[0, 1].set_xlabel("Iteration")
+    axes[0, 1].set_ylabel("Learning Rate")
+    axes[0, 1].set_yscale("log")
+    axes[0, 1].grid(True, alpha=0.3)
+
+# Validation metrics (if available)
+if "val_loss" in training_history.columns:
+    axes[1, 0].plot(
+        training_history.index,
+        training_history["val_loss"],
+        linewidth=2,
+        alpha=0.8,
+        color="orange",
+    )
+    axes[1, 0].set_title("Validation Loss", fontsize=12, fontweight="bold")
+    axes[1, 0].set_xlabel("Iteration")
+    axes[1, 0].set_ylabel("Validation Loss")
+    axes[1, 0].grid(True, alpha=0.3)
+else:
+    axes[1, 0].text(
+        0.5,
+        0.5,
+        "Validation data\nnot available",
+        ha="center",
+        va="center",
+        transform=axes[1, 0].transAxes,
+    )
+    axes[1, 0].set_title("Validation Loss", fontsize=12, fontweight="bold")
+
+# Loss improvement over time
+if len(training_history) > 10:
+    window = max(10, len(training_history) // 20)
+    smoothed_loss = training_history["loss"].rolling(window=window).mean()
+    axes[1, 1].plot(
+        training_history.index,
+        smoothed_loss,
+        linewidth=2,
+        alpha=0.8,
+        color="green",
+    )
+    axes[1, 1].set_title(
+        f"Smoothed Loss (window={window})", fontsize=12, fontweight="bold"
+    )
+    axes[1, 1].set_xlabel("Iteration")
+    axes[1, 1].set_ylabel("Smoothed Loss")
+    axes[1, 1].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
 
 # %% [markdown]
 # ### Prerequisites Check
@@ -1459,10 +1610,108 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# # 📚 REFERENCE
+# ## New Models <a id="TrainingWorkflow"></a>
+#
 
 # %% [markdown]
-# ## 🐾 Next Steps
+#
+# For production workflows, you'll want to create custom models with your own data and longer training times.
+#
+# ### Model Creation Workflow
+#
+# 1. **Prepare Training Data** - Collect and label video frames (hundreds to thousands of frames)
+# 2. **Create Skeleton** - Define body parts and connections for your species/application
+# 3. **Configure Training** - Set up production parameters (10,000+ iterations, validation split, augmentation)
+# 4. **Execute Training** - Run full training with proper evaluation and checkpointing
+# 5. **Model Evaluation** - Assess performance on held-out test data
+#
+# ### Production Training Parameters
+#
+# ```python
+# # Example production training configuration
+# production_params = {
+#     "trainingsetindex": 0,
+#     "shuffle": 1,
+#     "net_type": "resnet_50",  # or resnet_101 for better accuracy
+#     "maxiters": 30000,       # Production: 20,000-50,000+ iterations
+#     "displayiters": 1000,     # Less frequent progress updates
+#     "saveiters": 5000,        # Save checkpoints every 5k iterations
+#     "batch_size": 8,          # Higher batch size for better training
+#     "multi_step": [[0.005, 7500], [0.001, 12000], [0.0001, 20000]],  # Learning rate schedule
+# }
+# ```
+#
+# **⚠️ Note**: Production training requires significant computational resources (GPU, 4-24+ hours).
+
+# %% [markdown]
+# ## Video Generation <a id="VideoGeneration"></a>
+#
+
+# %% [markdown]
+#
+# ### Prerequisites Check
+#
+# Before generating videos, ensure you have completed pose estimation:
+#
+# ```python
+# # Check video generation prerequisites
+# can_make_video = False
+# if (
+#     processed_df is not None
+#     and len(processed_df) > 0
+#     and pose_selection_key is not None
+# ):
+#     can_make_video = True
+# ```
+#
+# ### Generate Pose Videos
+#
+# Create annotated videos showing keypoints and pose estimation results:
+#
+# ```python
+# if can_make_video:
+#     # Configure video generation parameters
+#     video_params = {
+#         "duration": 30.0,  # seconds
+#         "fps": 30,
+#         "show_skeleton": True,
+#         "keypoint_radius": 3,
+#         "line_thickness": 2,
+#     }
+#
+#     # Generate video with pose overlay
+#     video_path = (PoseV2() & pose_selection_key).make_video(**video_params)
+#     print(f"✅ Video generated: {video_path}")
+# else:
+#     print("⚠️ Complete pose estimation first before generating videos")
+# ```
+#
+# ### Video Quality Optimization
+#
+# ```python
+# # For best quality/size balance
+# optimal_params = {
+#     "fps": 30,                    # Standard framerate
+#     "compression": "h264",        # Standard codec
+#     "quality": "medium",          # Balance size/quality
+#     "resolution": (1280, 720)     # HD ready
+# }
+#
+# # For fastest generation
+# fast_params = {
+#     "fps": 15,                    # Lower framerate
+#     "resolution": (640, 480),     # Lower resolution
+#     "compression": "fast"         # Fast encoding
+# }
+# ```
+#
+# **💡 Tip**: Test with short durations (5-10 seconds) before generating full-length videos.
+
+# %% [markdown]
+# # Reference
+
+# %% [markdown]
+# ## Next Steps
 #
 # - **Linearization**: Convert 2D position to 1D track position (notebook 24)
 # - **Decoding**: Use position for neural decoding (notebooks 41-42)
@@ -1473,12 +1722,14 @@ plt.show()
 #
 
 # %% [markdown]
-# ### 🚨 Troubleshooting <a id="Troubleshooting"></a>
+# ## Troubleshooting <a id="Troubleshooting"></a>
 #
+
+# %% [markdown]
 # <details>
 # <summary><b>Model Import</b> (Click to expand)</summary>
 #
-# #### **📥 Model Import Issues**
+# #### **Model Import Issues**
 #
 # **"Permission denied" or "Access forbidden"**
 # - Verify database user permissions - Ask admin to add body parts
@@ -1507,7 +1758,7 @@ plt.show()
 # <details>
 # <summary><b>Pose Estimation</b> (Click to expand)</summary>
 #
-# #### **🎯 Pose Estimation Issues**
+# #### **Pose Estimation Issues**
 #
 # **"CUDA out of memory"**
 # ```python
@@ -1533,7 +1784,7 @@ plt.show()
 # <details>
 # <summary><b>Parameters</b> (Click to expand)</summary>
 #
-# #### **⚙️ Parameter Configuration Issues**
+# #### **Parameter Configuration Issues**
 #
 # **"Bodypart not found"**
 # - Check available bodyparts: `(Skeleton.BodyPart() & {"skeleton_id": your_id}).fetch()`
@@ -1551,7 +1802,7 @@ plt.show()
 # <details>
 # <summary><b>Data Processing</b> (Click to expand)</summary>
 #
-# #### **🔄 Data Processing Issues**
+# #### **Data Processing Issues**
 #
 # **"PoseV2 processing failed"**
 # - Ensure PoseEstim data exists first
@@ -1568,7 +1819,7 @@ plt.show()
 # </details>
 
 # %% [markdown]
-# ## 🎓 Guides
+# ## Guides
 
 # %% [markdown]
 # <details>
@@ -1740,7 +1991,7 @@ plt.show()
 # </details>
 
 # %% [markdown]
-# ## 🔗 External Resources <a id="Resources"></a>
+# ## External Resources <a id="Resources"></a>
 #
 # ### Documentation & Guides
 # - [Spyglass Documentation](https://lorenfranklab.github.io/spyglass/)
