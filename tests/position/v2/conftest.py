@@ -9,16 +9,6 @@ import pytest
 from pynwb import NWBHDF5IO, NWBFile
 from pynwb.file import Subject
 
-# ----------------------------- Database Setup ---------------------------------
-
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_database_config():
-    """Load database configuration before any tests run."""
-    dj.config.load("/home/cb/wrk/spyglass/pv2/dj_local_conf_pv2.json")
-    yield
-
-
 # ----------------------------- Class Fixtures ---------------------------------
 
 

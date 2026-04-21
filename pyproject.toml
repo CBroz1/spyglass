@@ -111,6 +111,7 @@ optional-dependencies.test = [
   "pytest",                 # unit testing
   "pytest-cov",             # code coverage
   "pytest-xvfb",            # for headless testing of Qt
+  "tables",                 # pytables for DLC HDF5 support in tests
 ]
 urls."Bug Tracker" = "https://github.com/LorenFrankLab/spyglass/issues"
 urls."Homepage" = "https://github.com/LorenFrankLab/spyglass"
