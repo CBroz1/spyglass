@@ -470,14 +470,17 @@ class VideoFile(SpyglassMixin, dj.Imported):
     camera_name: varchar(80)
     video_file_object_id: varchar(40)  # the object id of the file object
     path = NULL: varchar(512)  # path to video file (if extracted)
-    unique index (path)
     """
 
     _nwb_table = Nwbfile
     _timestamp_overlap_threshold = 0.9  # Min fraction of timestamps in epoch
 
     def _prepare_video_entry(
-        self, key, video_obj, cam_device_regex: str = r"camera_device (\d+)"
+        self,
+        key,
+        video_obj,
+        cam_device_regex: str = r"camera_device (\d+)",
+        file_idx=None,
     ):
         """Prepare a VideoFile entry dict for a given video object.
 
@@ -490,6 +493,9 @@ class VideoFile(SpyglassMixin, dj.Imported):
         cam_device_regex : str, optional
             Regular expression pattern to extract camera device number.
             Default: r"camera_device (\\d+)"
+        file_idx : int, optional
+            Index of which external file to use for multi-file ImageSeries.
+            If None, uses the first file (index 0). Default: None
 
         Returns
         -------
@@ -521,8 +527,14 @@ class VideoFile(SpyglassMixin, dj.Imported):
         # the NWB object name, which is often a generic label like "video_files".
         ext_files = getattr(video_obj, "external_file", None) or []
         if ext_files:
-            first_ext = Path(ext_files[0])
-            video_filename = first_ext.name
+            # Use specific file for multifile case, or first file for single file
+            file_to_use = file_idx if file_idx is not None else 0
+            if file_to_use < len(ext_files):
+                selected_ext = Path(ext_files[file_to_use])
+                video_filename = selected_ext.name
+            else:
+                # Fallback to object name if file_idx is out of bounds
+                video_filename = video_obj.name
         else:
             video_filename = video_obj.name
 
@@ -657,7 +669,9 @@ class VideoFile(SpyglassMixin, dj.Imported):
                 continue
 
             # This file segment matches the epoch - prepare VideoFile entry
-            entry = self._prepare_video_entry(key.copy(), video_obj)
+            entry = self._prepare_video_entry(
+                key.copy(), video_obj, file_idx=file_idx
+            )
             entries.append(entry)
 
         return entries
