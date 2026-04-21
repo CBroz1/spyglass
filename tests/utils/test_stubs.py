@@ -15,13 +15,16 @@ class StubInferenceRunner:
 
     def __init__(self, mock_result=None):
         """Initialize with optional mock result data."""
-        self.mock_result = mock_result or pd.DataFrame(
-            {
-                ("DLC_resnet50", "nose", "x"): [100.0, 101.0, 102.0],
-                ("DLC_resnet50", "nose", "y"): [200.0, 201.0, 202.0],
-                ("DLC_resnet50", "nose", "likelihood"): [0.95, 0.95, 0.95],
-            }
-        )
+        if mock_result is None:
+            self.mock_result = pd.DataFrame(
+                {
+                    ("DLC_resnet50", "nose", "x"): [100.0, 101.0, 102.0],
+                    ("DLC_resnet50", "nose", "y"): [200.0, 201.0, 202.0],
+                    ("DLC_resnet50", "nose", "likelihood"): [0.95, 0.95, 0.95],
+                }
+            )
+        else:
+            self.mock_result = mock_result
         self.calls = []  # Track method calls for assertions
 
     def run_dlc_inference(
@@ -117,10 +120,18 @@ class StubFileSystem:
         """Mock existence check - returns True for configured paths."""
         path_str = str(path)
         self.calls.append({"method": "exists", "path": path_str})
-        # Check if path is in yaml data or matches any glob pattern
+
+        # Check if path is in yaml data
         if path_str in self.mock_yaml_data:
             return True
-        # Check if it's a directory that should exist
+
+        # Check if it's a parent directory of any mock data
+        path_normalized = path_str.rstrip("/")
+        for data_path in self.mock_yaml_data.keys():
+            if data_path.startswith(path_normalized + "/"):
+                return True
+
+        # Check if it matches any glob pattern
         for pattern in self.mock_files:
             if path_str in pattern or pattern.startswith(path_str):
                 return True

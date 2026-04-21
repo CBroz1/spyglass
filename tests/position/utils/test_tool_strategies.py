@@ -1,6 +1,6 @@
 """Tests for pose estimation tool strategies."""
 
-from typing import Any, Dict, Set
+from typing import Any, Dict, List, Set
 
 import pytest
 
@@ -217,6 +217,12 @@ class TestToolStrategyFactory:
 
             def get_skipped_params(self) -> Set[str]:
                 return {"analysis_file_id", "model_path"}
+
+            def find_output_files(self) -> List[str]:
+                return ["test_output.csv"]
+
+            def get_output_file_patterns(self) -> Dict[str, str]:
+                return {"test": "*.test"}
 
             def train_model(
                 self,

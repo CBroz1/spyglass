@@ -1496,6 +1496,12 @@ class Model(SpyglassMixin, dj.Computed):
             parent_id=model_key["model_id"],
         )
 
+        # Generate model_selection_id if not provided
+        if "model_selection_id" not in new_sel_key:
+            new_sel_key["model_selection_id"] = default_pk_name(
+                "ms-train", {"parent_id": model_key["model_id"]}
+            )
+
         self._info_msg(
             f"Inserting new ModelSelection with parent_id: {model_key['model_id']}"
         )
@@ -2136,6 +2142,12 @@ class Model(SpyglassMixin, dj.Computed):
         # Step 4: Create ModelSelection entry (no skeleton_id — it lives in
         # ModelParams, not ModelSelection)
         sel_key = {**model_params_key, **vid_group_key}
+        # Generate model_selection_id if not provided
+        if "model_selection_id" not in sel_key:
+            sel_key["model_selection_id"] = default_pk_name(
+                "ms-dlc",
+                {"model_params_id": model_params_key["model_params_id"]},
+            )
         ModelSelection().insert1(sel_key, skip_duplicates=True)
 
         # Return the existing Model entry if one already exists for this path.
@@ -2388,6 +2400,12 @@ class Model(SpyglassMixin, dj.Computed):
 
         # Step 12: Create ModelSelection entry
         sel_key = {**model_params_key, **vid_group_key}
+        # Generate model_selection_id if not provided
+        if "model_selection_id" not in sel_key:
+            sel_key["model_selection_id"] = default_pk_name(
+                "ms-ndx",
+                {"model_params_id": model_params_key["model_params_id"]},
+            )
         ModelSelection().insert1(sel_key, skip_duplicates=True)
 
         # Return the existing Model entry if one already exists for this path.
