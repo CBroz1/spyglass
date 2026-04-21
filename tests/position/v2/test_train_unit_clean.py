@@ -65,7 +65,7 @@ class TestModelMethods:
     """Test Model table methods using proper V2 fixtures."""
 
     def test_make_method_basic(
-        self, model, model_sel, model_params, dlc_project_config
+        self, model, model_sel, model_params, dlc_project_config, skip_if_no_dlc
     ):
         """Test basic Model.make() functionality using real DLC training with minimal params."""
         # Mock database fetches instead of relying on real data (like working V2 tests)

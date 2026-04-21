@@ -196,12 +196,10 @@ class TestModelMake:
             MockMetadata.return_value = mock_metadata_obj
 
             with (
-                patch("spyglass.position.v2.train.NWBHDF5IO"),
+                patch("pynwb.NWBHDF5IO"),
                 patch("pynwb.NWBFile") as mock_nwb,
-                patch(
-                    "spyglass.position.v2.train.AnalysisNwbfile"
-                ) as mock_analysis,
-                patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb,
+                patch("spyglass.common.AnalysisNwbfile") as mock_analysis,
+                patch("spyglass.common.Nwbfile") as mock_base_nwb,
             ):
 
                 # Mock available parent files
@@ -247,7 +245,12 @@ class TestModelParams:
         test_params = {
             "model_params_id": "test_params",
             "tool": "DLC",
-            "params": {"shuffle": 1, "trainingsetindex": 0, "maxiters": 10000},
+            "params": {
+                "shuffle": 1,
+                "trainingsetindex": 0,
+                "maxiters": 10000,
+                "project_path": "/test/project",  # Add required parameter
+            },
         }
 
         # Mock strategy pattern
@@ -291,7 +294,11 @@ class TestModelParams:
         """Test that insert1() detects duplicate parameters."""
         test_params = {
             "tool": "DLC",
-            "params": {"shuffle": 1, "trainingsetindex": 0},
+            "params": {
+                "shuffle": 1,
+                "trainingsetindex": 0,
+                "project_path": "/test/project",  # Add required parameter
+            },
         }
 
         # Mock strategy pattern
@@ -602,14 +609,10 @@ class TestModelMetadataRegistration:
         mock_io = MagicMock()
 
         with (
-            patch(
-                "spyglass.position.v2.train.NWBFile", return_value=mock_nwbfile
-            ),
-            patch("spyglass.position.v2.train.NWBHDF5IO", return_value=mock_io),
-            patch(
-                "spyglass.position.v2.train.AnalysisNwbfile"
-            ) as mock_analysis,
-            patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb,
+            patch("pynwb.NWBFile", return_value=mock_nwbfile),
+            patch("pynwb.NWBHDF5IO", return_value=mock_io),
+            patch("spyglass.common.AnalysisNwbfile") as mock_analysis,
+            patch("spyglass.common.Nwbfile") as mock_base_nwb,
         ):
 
             # Mock parent NWB files available
@@ -651,7 +654,7 @@ class TestModelMetadataRegistration:
             skeleton_id="test_skeleton",
         )
 
-        with patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb:
+        with patch("spyglass.common.Nwbfile") as mock_base_nwb:
             mock_base_nwb.return_value.fetch.return_value = (
                 []
             )  # No parent files
@@ -679,12 +682,10 @@ class TestModelMetadataRegistration:
         )
 
         with (
-            patch("spyglass.position.v2.train.NWBFile"),
-            patch("spyglass.position.v2.train.NWBHDF5IO"),
-            patch(
-                "spyglass.position.v2.train.AnalysisNwbfile"
-            ) as mock_analysis,
-            patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb,
+            patch("pynwb.NWBFile"),
+            patch("pynwb.NWBHDF5IO"),
+            patch("spyglass.common.AnalysisNwbfile") as mock_analysis,
+            patch("spyglass.common.Nwbfile") as mock_base_nwb,
         ):
 
             mock_base_nwb.return_value.fetch.return_value = ["parent.nwb"]
@@ -737,14 +738,10 @@ class TestModelMetadataRegistration:
         mock_nwbfile = MagicMock()
 
         with (
-            patch(
-                "spyglass.position.v2.train.NWBFile", return_value=mock_nwbfile
-            ),
-            patch("spyglass.position.v2.train.NWBHDF5IO"),
-            patch(
-                "spyglass.position.v2.train.AnalysisNwbfile"
-            ) as mock_analysis,
-            patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb,
+            patch("pynwb.NWBFile", return_value=mock_nwbfile),
+            patch("pynwb.NWBHDF5IO"),
+            patch("spyglass.common.AnalysisNwbfile") as mock_analysis,
+            patch("spyglass.common.Nwbfile") as mock_base_nwb,
             patch.object(model, "_info_msg"),
         ):
 
