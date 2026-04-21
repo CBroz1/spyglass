@@ -1,0 +1,230 @@
+"""Pure-function pose processing utilities.
+
+Extracted from PoseV2 so they can be tested and reused without a live
+DataJoint connection.
+"""
+
+import numpy as np
+import pandas as pd
+
+from spyglass.utils.logging import logger
+
+
+def apply_likelihood_threshold(
+    pose_df: pd.DataFrame,
+    likelihood_thresh: float,
+) -> pd.DataFrame:
+    """Set x/y to NaN where likelihood is below threshold.
+
+    Parameters
+    ----------
+    pose_df : pd.DataFrame
+        DataFrame with MultiIndex columns (scorer, bodypart, coord) where
+        coord includes 'x', 'y', and optionally 'likelihood'.
+    likelihood_thresh : float
+        Threshold in [0, 1].  Frames with likelihood < threshold are masked.
+
+    Returns
+    -------
+    pd.DataFrame
+        Copy of pose_df with low-likelihood positions set to NaN.
+    """
+    pose_df = pose_df.copy()
+    idx = pd.IndexSlice
+
+    if (
+        isinstance(pose_df.columns, pd.MultiIndex)
+        and pose_df.columns.nlevels >= 2
+    ):
+        # Works for both 2-level (bodypart, coord) and 3-level (scorer, bodypart, coord)
+        coord_level = pose_df.columns.nlevels - 1
+        bodypart_level = coord_level - 1
+        bodyparts = pose_df.columns.get_level_values(bodypart_level).unique()
+
+        for bodypart in bodyparts:
+            try:
+                if pose_df.columns.nlevels == 3:
+                    likelihood = pose_df.loc[:, idx[:, bodypart, "likelihood"]]
+                else:
+                    likelihood = pose_df.loc[:, idx[bodypart, "likelihood"]]
+                low = likelihood.values.flatten() < likelihood_thresh
+                if pose_df.columns.nlevels == 3:
+                    pose_df.loc[low, idx[:, bodypart, ["x", "y"]]] = np.nan
+                else:
+                    pose_df.loc[low, idx[bodypart, ["x", "y"]]] = np.nan
+            except KeyError:
+                logger.warning(
+                    f"No likelihood column for bodypart '{bodypart}', skipping threshold"
+                )
+
+    return pose_df
+
+
+def compute_pose_outputs(
+    pose_df: pd.DataFrame,
+    orient_params: dict,
+    centroid_params: dict,
+    smooth_params: dict,
+) -> dict:
+    """Run the full pose-processing pipeline as pure computation.
+
+    No DataJoint access.  All inputs are plain Python / NumPy / pandas objects.
+
+    Parameters
+    ----------
+    pose_df : pd.DataFrame
+        Raw pose DataFrame.  Columns may be a 2- or 3-level MultiIndex
+        (scorer, bodypart, coord) or (bodypart, coord).  Index must be
+        timestamps in seconds.
+    orient_params : dict
+        Orientation parameters — ``method`` key required.
+    centroid_params : dict
+        Centroid parameters — ``method`` and ``points`` keys required.
+    smooth_params : dict
+        Smoothing parameters — ``likelihood_thresh``, ``interpolate``,
+        ``smooth`` keys supported.
+
+    Returns
+    -------
+    dict
+        Keys: ``orientation`` (ndarray, shape n), ``centroid`` (ndarray,
+        shape n×2), ``velocity`` (ndarray, shape n), ``timestamps``
+        (ndarray, shape n), ``sampling_rate`` (float).
+    """
+    from spyglass.position.utils.centroid import calculate_centroid
+    from spyglass.position.utils.general import flatten_multiindex
+    from spyglass.position.utils.interpolation import (
+        get_smoothing_function,
+        interp_position,
+    )
+    from spyglass.position.utils.orientation import (
+        bisector_orientation,
+        get_span_start_stop,
+        no_orientation,
+        smooth_orientation,
+        two_pt_orientation,
+    )
+
+    timestamps = pose_df.index.values
+    sampling_rate = float(1 / np.median(np.diff(timestamps)))
+
+    # --- likelihood threshold -------------------------------------------------
+    likelihood_thresh = smooth_params.get("likelihood_thresh", 0.95)
+    pose_df = apply_likelihood_threshold(pose_df, likelihood_thresh)
+
+    # flatten to (bodypart, coord) for utility functions
+    pose_flat = flatten_multiindex(pose_df)
+
+    # --- orientation ----------------------------------------------------------
+    method = orient_params["method"]
+    if method == "two_pt":
+        orientation = two_pt_orientation(
+            pose_flat,
+            point1=orient_params["bodypart1"],
+            point2=orient_params["bodypart2"],
+        )
+    elif method == "bisector":
+        orientation = bisector_orientation(
+            pose_flat,
+            led1=orient_params["led1"],
+            led2=orient_params["led2"],
+            led3=orient_params["led3"],
+        )
+    elif method == "none":
+        orientation = no_orientation(pose_flat)
+    else:
+        raise ValueError(f"Unknown orientation method: {method!r}")
+
+    if orient_params.get("smooth", False):
+        sp = orient_params.get("smoothing_params", {})
+        orientation = smooth_orientation(
+            orientation,
+            timestamps,
+            sp.get("std_dev", 0.001),
+            orient_params.get("interpolate", True),
+        )
+
+    # --- centroid -------------------------------------------------------------
+    max_sep = centroid_params.get("max_LED_separation", None)
+    centroid = calculate_centroid(pose_flat, centroid_params["points"], max_sep)
+
+    # --- smoothing / interpolation of centroid --------------------------------
+    pos_df = pd.DataFrame(centroid, columns=["x", "y"], index=timestamps)
+
+    if smooth_params.get("interpolate", False):
+        interp_p = smooth_params.get("interp_params", {})
+        is_nan = np.isnan(pos_df["x"]) | np.isnan(pos_df["y"])
+        if np.any(is_nan):
+            nan_spans = get_span_start_stop(np.where(is_nan)[0])
+            pos_df = interp_position(
+                pos_df,
+                nan_spans,
+                max_pts_to_interp=interp_p.get("max_pts_to_interp"),
+                max_cm_to_interp=interp_p.get("max_cm_to_interp"),
+            )
+
+    if smooth_params.get("smooth", False):
+        sp = smooth_params["smoothing_params"]
+        sm = sp["method"]
+        smooth_func = get_smoothing_function(sm)
+        if sm == "moving_avg":
+            pos_df = smooth_func(
+                pos_df,
+                smoothing_duration=sp["smoothing_duration"],
+                sampling_rate=sampling_rate,
+            )
+        elif sm == "savgol":
+            pos_df = smooth_func(
+                pos_df,
+                window_length=sp["window_length"],
+                polyorder=sp.get("polyorder", 3),
+            )
+        elif sm == "gaussian":
+            pos_df = smooth_func(
+                pos_df,
+                std_dev=sp["std_dev"],
+                sampling_rate=sampling_rate,
+            )
+
+    centroid_smooth = pos_df[["x", "y"]].values
+
+    # --- velocity -------------------------------------------------------------
+    velocity = calculate_velocity(centroid_smooth, timestamps, sampling_rate)
+
+    return {
+        "orientation": orientation,
+        "centroid": centroid_smooth,
+        "velocity": velocity,
+        "timestamps": timestamps,
+        "sampling_rate": sampling_rate,
+    }
+
+
+def calculate_velocity(
+    position: np.ndarray,
+    timestamps: np.ndarray,
+    sampling_rate: float,  # noqa: ARG001 — kept for API consistency
+) -> np.ndarray:
+    """Calculate scalar speed (cm/s) from (x, y) position.
+
+    Parameters
+    ----------
+    position : np.ndarray
+        Shape (n_frames, 2).  x in column 0, y in column 1.
+    timestamps : np.ndarray
+        Shape (n_frames,).  Time in seconds.
+    sampling_rate : float
+        Sampling rate in Hz (unused in computation; kept for interface parity).
+
+    Returns
+    -------
+    np.ndarray
+        Shape (n_frames,).  First element is NaN; remainder are speeds in
+        units of position / time (typically cm/s).
+    """
+    dx = np.diff(position[:, 0])
+    dy = np.diff(position[:, 1])
+    displacement = np.sqrt(dx**2 + dy**2)
+    dt = np.diff(timestamps)
+    velocity = displacement / dt
+    return np.concatenate([[np.nan], velocity])

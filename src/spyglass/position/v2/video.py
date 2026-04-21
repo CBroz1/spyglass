@@ -432,19 +432,13 @@ class VidFileGroup(SpyglassMixin, dj.Manual):
         >>> print(group_key)
         {'vid_group_id': 'a1b2c3d4e5f67890...'}
         """
-        try:
-            import yaml
-        except ImportError:
-            raise ImportError(
-                "PyYAML required. Install with: pip install pyyaml"
-            )
+        from spyglass.position.utils.yaml_io import load_yaml
 
         config_path = Path(config_path)
         if not config_path.exists():
             raise FileNotFoundError(f"DLC config not found: {config_path}")
 
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
+        config = load_yaml(config_path)
 
         task = config.get("Task", "unknown")
         date = config.get("date", "unknown")

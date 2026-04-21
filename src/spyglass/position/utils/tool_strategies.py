@@ -10,6 +10,8 @@ from typing import Any, Dict, Set
 
 import datajoint as dj
 
+from .protocols import FileSystemProtocol, RealFileSystem
+
 
 class PoseToolStrategy(ABC):
     """Abstract base class for pose estimation tool strategies.
@@ -17,6 +19,16 @@ class PoseToolStrategy(ABC):
     Each tool (DLC, SLEAP, etc.) implements this interface to provide
     consistent parameter validation, training, and model management.
     """
+
+    def __init__(self, filesystem: FileSystemProtocol = None):
+        """Initialize with optional filesystem dependency.
+
+        Parameters
+        ----------
+        filesystem : FileSystemProtocol, optional
+            File system implementation. If None, uses RealFileSystem.
+        """
+        self._fs = filesystem or RealFileSystem()
 
     @property
     @abstractmethod
@@ -461,11 +473,11 @@ class DLCStrategy(PoseToolStrategy):
             )
 
         project_path = Path(params["project_path"])
-        if not project_path.exists():
+        if not self._fs.exists(project_path):
             raise FileNotFoundError(f"DLC project not found: {project_path}")
 
         config_path = project_path / "config.yaml"
-        if not config_path.exists():
+        if not self._fs.exists(config_path):
             raise FileNotFoundError(
                 f"DLC config.yaml not found in: {project_path}"
             )
@@ -473,8 +485,9 @@ class DLCStrategy(PoseToolStrategy):
         model_instance._info_msg(f"Using DLC project: {project_path}")
 
         # Load config
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
+        from spyglass.position.utils.yaml_io import load_yaml
+
+        config = self._fs.read_yaml(config_path)
 
         # Check for continued training
         parent_id = sel_entry.get("parent_id")
@@ -560,13 +573,15 @@ class DLCStrategy(PoseToolStrategy):
                 self.get_default_output_location(str(video_path), output_dir)
             )
 
-            if not search_dir.exists():
+            if not self._fs.exists(search_dir):
                 continue
 
             # Look for DLC output files for this video
             patterns = self.get_output_file_patterns()
             dlc_pattern = patterns["primary"].format(video_stem=video_path.stem)
-            matching_files = list(search_dir.glob(dlc_pattern))
+            # Convert to full path pattern for filesystem glob
+            full_pattern = str(search_dir / dlc_pattern)
+            matching_files = [Path(p) for p in self._fs.glob(full_pattern)]
 
             if matching_files:
                 # Use most recent if multiple files
@@ -577,7 +592,10 @@ class DLCStrategy(PoseToolStrategy):
             else:
                 # Fallback: look for any h5 files
                 fallback_pattern = patterns["fallback"]
-                h5_files = list(search_dir.glob(fallback_pattern))
+                full_fallback_pattern = str(search_dir / fallback_pattern)
+                h5_files = [
+                    Path(p) for p in self._fs.glob(full_fallback_pattern)
+                ]
                 if h5_files:
                     latest_h5 = max(h5_files, key=lambda p: p.stat().st_mtime)
                     output_files.append(str(latest_h5))
@@ -678,16 +696,16 @@ class DLCStrategy(PoseToolStrategy):
         from datetime import datetime
         from pathlib import Path
 
-        import yaml
+        from spyglass.position.utils.yaml_io import load_yaml
 
         # Validate project exists
         project_path = Path(config["project_path"])
-        if not project_path.exists():
+        if not self._fs.exists(project_path):
             raise FileNotFoundError(f"DLC project not found: {project_path}")
 
         # Look for dlc-models directory
         dlc_models_dir = project_path / "dlc-models"
-        if not dlc_models_dir.exists():
+        if not self._fs.exists(dlc_models_dir):
             return {}
 
         # Find all iteration directories (iteration-0, iteration-1, etc.)
@@ -1291,4 +1309,6 @@ class ToolStrategyFactory:
             raise ValueError(
                 "Strategy class must implement PoseToolStrategy interface"
             )
+        cls._strategies[tool] = strategy_class
+        cls._strategies[tool] = strategy_class
         cls._strategies[tool] = strategy_class

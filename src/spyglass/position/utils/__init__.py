@@ -30,7 +30,14 @@ from .dlc_io import (
     test_mode_suppress,
     validate_dlc_file,
 )
-from .general import get_param_names, sanitize_filename
+from .general import flatten_multiindex, get_param_names, sanitize_filename
+from .path_helpers import resolve_model_path, to_stored_path
+from .pose_processing import (
+    apply_likelihood_threshold,
+    calculate_velocity,
+    compute_pose_outputs,
+)
+from .yaml_io import dump_yaml, load_yaml
 from .interpolation import (
     SMOOTHING_METHODS,
     get_smoothing_function,
@@ -112,9 +119,20 @@ __all__ = [
     "validate_centroid_params",
     "validate_interpolation_params",
     # General utilities
+    "flatten_multiindex",
     "get_most_recent_file",
     "get_param_names",
     "sanitize_filename",
+    # Pose processing
+    "apply_likelihood_threshold",
+    "calculate_velocity",
+    "compute_pose_outputs",
+    # Path helpers
+    "resolve_model_path",
+    "to_stored_path",
+    # YAML I/O
+    "load_yaml",
+    "dump_yaml",
     # Video generation
     "VideoMaker",
     "make_video",

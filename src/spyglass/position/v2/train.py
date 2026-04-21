@@ -31,6 +31,7 @@ from spyglass.position.utils import (
     get_param_names,
     suppress_print_from_package,
 )
+from spyglass.position.utils.yaml_io import load_yaml
 from spyglass.position.utils.tool_strategies import ToolStrategyFactory
 from spyglass.position.v2.video import VidFileGroup
 from spyglass.settings import dlc_project_dir
@@ -179,6 +180,245 @@ def prompt_default(primary_key: str, default: str) -> str:
     if choice.lower() == "n":
         raise RuntimeError("Aborted by user.")
     return choice if choice else default
+
+
+# ----------------------- Training-history pure helpers -----------------------
+
+_CSV_PATTERNS = [
+    "**/learning_stats.csv",
+    "**/log.csv",
+    "**/*training*.csv",
+]
+
+
+def discover_training_csvs(model_dir: Path) -> "list[Path]":
+    """Return unique CSV files that may contain training loss data.
+
+    Searches *model_dir* and up to two parent directories using the
+    standard DLC CSV filename patterns.  Results are deduplicated while
+    preserving discovery order.
+
+    Parameters
+    ----------
+    model_dir : Path
+        Directory where the trained model weights live.
+
+    Returns
+    -------
+    list[Path]
+        Unique paths to candidate CSV files.  Empty list if none found.
+    """
+    search_roots = [model_dir, model_dir.parent, model_dir.parent.parent]
+    seen: set = set()
+    found: list = []
+    for root in search_roots:
+        if not root.exists():
+            continue
+        for pattern in _CSV_PATTERNS:
+            for p in root.glob(pattern):
+                if p not in seen:
+                    seen.add(p)
+                    found.append(p)
+        if found:
+            break  # stop once any root yields results
+    return found
+
+
+def parse_training_csv(path: Path) -> "pd.DataFrame | None":
+    """Parse a single training-history CSV into a normalised DataFrame.
+
+    Handles both header-less (DLC ``learning_stats.csv``) and header-bearing
+    formats.  Returns ``None`` when the file is empty or has fewer than 2
+    columns (not parseable as training data).
+
+    Parameters
+    ----------
+    path : Path
+        Path to the CSV file.
+
+    Returns
+    -------
+    pd.DataFrame or None
+        Columns: ``iteration``, ``loss``, optionally ``learning_rate``,
+        and ``source_file``.  ``None`` on parse failure or insufficient data.
+    """
+    import pandas as pd
+
+    try:
+        # Always read raw (no header) first to detect format
+        df_raw = pd.read_csv(path, header=None)
+    except Exception:
+        return None
+
+    if df_raw.empty or df_raw.shape[1] < 2:
+        return None
+
+    # Detect whether the first row is a header (any non-numeric value)
+    def _is_numeric(val):
+        try:
+            float(val)
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    first_row_numeric = all(_is_numeric(v) for v in df_raw.iloc[0])
+    if first_row_numeric:
+        # Headerless format (DLC learning_stats.csv)
+        df = df_raw
+    else:
+        # Re-read letting pandas use first row as header
+        try:
+            df = pd.read_csv(path)
+        except Exception:
+            return None
+        if df.empty or df.shape[1] < 2:
+            return None
+
+    col_map: dict = {}
+    cols = list(df.columns)
+
+    # Map first two columns to canonical names if needed
+    if str(cols[0]) != "iteration":
+        col_map[cols[0]] = "iteration"
+    if str(cols[1]) != "loss":
+        col_map[cols[1]] = "loss"
+
+    # Detect learning-rate column by name or position
+    lr_candidates = [
+        c
+        for c in cols
+        if isinstance(c, str)
+        and ("learning_rate" in c.lower() or c.lower() == "lr")
+    ]
+    if lr_candidates and str(lr_candidates[0]) != "learning_rate":
+        col_map[lr_candidates[0]] = "learning_rate"
+    elif (
+        not lr_candidates and len(cols) >= 3 and str(cols[2]) != "learning_rate"
+    ):
+        col_map[cols[2]] = "learning_rate"
+
+    if col_map:
+        df = df.rename(columns=col_map)
+
+    df["source_file"] = str(path)
+    return df
+
+
+def aggregate_training_stats(dfs: "list[pd.DataFrame]") -> "pd.DataFrame":
+    """Combine a list of per-file training DataFrames into one sorted table.
+
+    Parameters
+    ----------
+    dfs : list[pd.DataFrame]
+        DataFrames produced by :func:`parse_training_csv`.
+
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated data sorted by ``iteration`` (if present).  An empty
+        DataFrame is returned when *dfs* is empty.
+    """
+    import pandas as pd
+
+    if not dfs:
+        return pd.DataFrame()
+
+    combined = pd.concat(dfs, ignore_index=True)
+    if "iteration" in combined.columns:
+        combined = combined.sort_values("iteration").reset_index(drop=True)
+    return combined
+
+
+# ----------------------- Skeleton pure helpers -----------------------
+
+
+def validate_skeleton_graph(
+    bodyparts: "list[str]", edges: "list[tuple[str, str]]"
+) -> None:
+    """Raise if *bodyparts* / *edges* do not form a valid skeleton description.
+
+    Parameters
+    ----------
+    bodyparts : list[str]
+        Node labels.
+    edges : list[tuple[str, str]]
+        Pairs of node labels defining connections.
+
+    Raises
+    ------
+    ValueError
+        When *bodyparts* is empty or an edge references an unknown bodypart.
+    """
+    if not bodyparts:
+        raise ValueError("bodyparts must not be empty")
+    bp_set = set(bodyparts)
+    for edge in edges:
+        try:
+            a, b = edge
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Each edge must be a (bodypart, bodypart) pair, got: {edge!r}"
+            )
+        if a not in bp_set or b not in bp_set:
+            raise ValueError(
+                f"Edge ({a!r}, {b!r}) references bodypart(s) not in {sorted(bp_set)}"
+            )
+
+
+def is_duplicate_skeleton(
+    bodyparts_new: "list[str]",
+    edges_new: "list[tuple[str, str]]",
+    bodyparts_existing: "list[str]",
+    edges_existing: "list[tuple[str, str]]",
+    threshold: float = 0.85,
+) -> bool:
+    """Return True if the two skeletons are graph-isomorphic with similar labels.
+
+    Uses :mod:`networkx` graph isomorphism with fuzzy node-label matching.
+
+    Parameters
+    ----------
+    bodyparts_new, edges_new : list
+        Candidate skeleton to test.
+    bodyparts_existing, edges_existing : list
+        Skeleton already in the database.
+    threshold : float, optional
+        SequenceMatcher ratio threshold for node-label similarity, by default 0.85.
+
+    Returns
+    -------
+    bool
+    """
+    from difflib import SequenceMatcher
+
+    import networkx as nx
+
+    def _build(bps, eds):
+        G = nx.Graph()
+        for bp in bps:
+            G.add_node(bp, label=bp.lower())
+        for a, b in eds:
+            G.add_edge(a, b)
+        return G
+
+    G_new = _build(bodyparts_new, edges_new)
+    G_old = _build(bodyparts_existing, edges_existing)
+
+    if G_new.number_of_nodes() != G_old.number_of_nodes():
+        return False
+    if G_new.number_of_edges() != G_old.number_of_edges():
+        return False
+
+    def node_match(a, b):
+        ratio = SequenceMatcher(
+            None, a.get("label", ""), b.get("label", "")
+        ).ratio()
+        return ratio >= threshold
+
+    GM = nx.algorithms.isomorphism.GraphMatcher(
+        G_new, G_old, node_match=node_match
+    )
+    return GM.is_isomorphic()
 
 
 # ---------------------------------- Tables -----------------------------------
@@ -462,45 +702,36 @@ class Skeleton(SpyglassMixin, dj.Lookup):
                 f"Key must include 'bodyparts' and 'edges' fields: {key}"
             )
 
-        # Validate body parts against the reference table
+        # Validate body parts against the reference table (DB query, raises first)
         labels_norm = [self._normalize_label(x) for x in bodyparts]
         _ = self._validate_bodyparts(set(labels_norm))
 
-        # If dupe error, compute labeled graph.
-        # Skip topology-based dedup when the caller provides an explicit
-        # skeleton_id — they want to create a named entry, not reuse an
-        # existing topologically-equivalent one.
+        # Validate edge structure (pure, no DB — runs after bodypart check so
+        # "unknown bodypart" errors surface before structural edge errors)
+        validate_skeleton_graph(bodyparts, edges)
+
         shape_hash = self._shape_hash_from_edges(bodyparts, edges)
-        G_new, checks = None, []
+
+        # Duplicate detection: skip when caller supplies an explicit skeleton_id
         if check_duplicates and not skeleton_id:
-            G_new = self._build_labeled_graph(bodyparts, edges)
-            checks = self & dict(hash=shape_hash)
-
-        # Check for graph matches
-        for row in checks:
-            row_bodyparts = self.get_bodyparts(row["skeleton_id"])
-            G_old = self._build_labeled_graph(row_bodyparts, row["edges"])
-
-            def node_match(a, b):
-                return self._fuzzy_equal(
-                    a.get("label", ""), b.get("label", ""), name_similarity
-                )
-
-            GM = nx.algorithms.isomorphism.GraphMatcher(
-                G_new, G_old, node_match=node_match
-            )
-            if GM.is_isomorphic():
-                # Back-fill bodyparts blob if missing (schema migration)
-                if row.get("bodyparts") is None:
-                    super().update1(
-                        dict(
-                            skeleton_id=row["skeleton_id"], bodyparts=bodyparts
+            for row in self & dict(hash=shape_hash):
+                row_bodyparts = self.get_bodyparts(row["skeleton_id"])
+                if is_duplicate_skeleton(
+                    bodyparts,
+                    edges,
+                    row_bodyparts,
+                    row["edges"],
+                    name_similarity,
+                ):
+                    if row.get("bodyparts") is None:
+                        super().update1(
+                            dict(
+                                skeleton_id=row["skeleton_id"],
+                                bodyparts=bodyparts,
+                            )
                         )
-                    )
-                return dict(skeleton_id=row["skeleton_id"])
+                    return dict(skeleton_id=row["skeleton_id"])
 
-        # Prompt user for skeleton id if not provided
-        # Likely case for inserting via DLC config
         if not skeleton_id:
             skeleton_id = default_pk_name("skel", key)
             if not accept_default and not self._test_mode:
@@ -508,21 +739,13 @@ class Skeleton(SpyglassMixin, dj.Lookup):
 
         insert_pk = dict(skeleton_id=skeleton_id)
         super().insert1(
-            dict(
-                insert_pk,
-                bodyparts=bodyparts,
-                edges=edges,
-                hash=shape_hash,
-            ),
+            dict(insert_pk, bodyparts=bodyparts, edges=edges, hash=shape_hash),
             **kwargs,
         )
-
-        # Insert bodyparts into part table
-        bodypart_entries = [
-            {"skeleton_id": skeleton_id, "bodypart": bp} for bp in bodyparts
-        ]
-        self.BodyPart.insert(bodypart_entries, skip_duplicates=True)
-
+        self.BodyPart.insert(
+            [{"skeleton_id": skeleton_id, "bodypart": bp} for bp in bodyparts],
+            skip_duplicates=True,
+        )
         return insert_pk
 
     def show_skeleton(self, skeleton_id: str = None):
@@ -1570,148 +1793,47 @@ class Model(SpyglassMixin, dj.Computed):
         if not (self & model_key):
             raise ValueError(f"Model not found: {model_key}")
 
-        # Get model path and try simple approach first
         model_entry = (self & model_key).fetch1()
-        model_path = Path(model_entry["model_path"])
-        model_path = resolve_model_path(str(model_path))
+        model_path = resolve_model_path(str(model_entry["model_path"]))
 
-        # First try simple approach: learning_stats.csv in model directory
-        stats_path = model_path / "learning_stats.csv"
-
-        if stats_path.exists():
-            try:
-                # Read CSV (format: iteration, loss, learning_rate)
-                df = pd.read_csv(
-                    stats_path,
-                    header=None,
-                    names=["iteration", "loss", "learning_rate"],
-                )
-                df["source_file"] = "learning_stats.csv"
-                self._logger.debug(
-                    f"Loaded {len(df)} training iterations from {stats_path}"
-                )
-                return df
-            except Exception as e:
-                self._warn_msg(f"Error reading {stats_path}: {e}")
-
-        # Enhanced discovery: try multiple patterns if simple approach fails
-        self._info_msg(
-            "Learning stats not found in standard location, trying enhanced discovery..."
-        )
-
-        # Expand search to parent directories for better CSV discovery
-        search_paths = [model_path, model_path.parent, model_path.parent.parent]
-
-        # Multiple CSV patterns for enhanced discovery
-        csv_patterns = [
-            "**/learning_stats.csv",
-            "**/log.csv",
-            "**/*training*.csv",
-        ]
-
-        all_csv_files = []
-        for search_path in search_paths:
-            if search_path.exists():
-                for pattern in csv_patterns:
-                    csv_files = list(search_path.glob(pattern))
-                    all_csv_files.extend(csv_files)
-                if all_csv_files:
-                    break  # Stop searching if we found files
-
-        if not all_csv_files:
+        csv_files = discover_training_csvs(model_path)
+        if not csv_files:
             self._warn_msg(
-                f"No training stats found in: {[str(p) for p in search_paths]}. "
-                f"Training may have been too short (displayiters > 0 required) or incomplete."
+                f"No training stats found near: {model_path}. "
+                "Training may have been too short (displayiters > 0 required) or incomplete."
             )
             return None
 
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_csv_files = []
-        for f in all_csv_files:
-            if f not in seen:
-                seen.add(f)
-                unique_csv_files.append(f)
+        self._info_msg(f"Found {len(csv_files)} training CSV file(s)")
 
-        self._info_msg(f"Found {len(unique_csv_files)} training CSV file(s)")
-
-        # Try to read and combine the CSV files
-        training_data = []
-        for csv_file in unique_csv_files:
-            try:
-                df = pd.read_csv(csv_file)
-                if len(df) == 0:
-                    continue
-
-                # Handle different CSV formats
-                if df.shape[1] < 2:
-                    continue
-
-                # Standardize column names
-                df_clean = df.copy()
-                col_mapping = {}
-
-                # Map first two columns to iteration and loss
-                if len(df.columns) >= 2:
-                    col_mapping[df.columns[0]] = "iteration"
-                    col_mapping[df.columns[1]] = "loss"
-
-                # Look for learning rate column
-                lr_cols = [
-                    col
-                    for col in df.columns
-                    if "learning_rate" in col.lower() or "lr" in col.lower()
-                ]
-                if lr_cols:
-                    col_mapping[lr_cols[0]] = "learning_rate"
-                elif len(df.columns) >= 3:
-                    col_mapping[df.columns[2]] = "learning_rate"
-
-                df_clean = df_clean.rename(columns=col_mapping)
-
-                # Add source file info
-                relative_path = csv_file.relative_to(model_path.parent)
-                df_clean["source_file"] = str(relative_path)
-
-                training_data.append(df_clean)
-                self._info_msg(f"Loaded {len(df)} records from {relative_path}")
-
-            except Exception as e:
-                self._warn_msg(f"Error reading {csv_file.name}: {e}")
-
-        if not training_data:
+        parsed = [parse_training_csv(p) for p in csv_files]
+        valid = [df for df in parsed if df is not None]
+        if not valid:
             self._warn_msg(
                 "No valid training data found in CSV files. "
                 "Ensure displayiters > 0 and check training logs for errors."
             )
             return None
 
-        # Combine all training data
-        combined_data = pd.concat(training_data, ignore_index=True)
+        combined = aggregate_training_stats(valid)
 
-        # Sort by iteration if available
-        if "iteration" in combined_data.columns:
-            combined_data = combined_data.sort_values("iteration").reset_index(
-                drop=True
-            )
-
-        # Calculate and log improvement statistics
-        if "loss" in combined_data.columns and len(combined_data) > 0:
-            initial_loss = combined_data["loss"].iloc[0]
-            final_loss = combined_data["loss"].iloc[-1]
+        if "loss" in combined.columns and len(combined) > 0:
+            initial_loss = combined["loss"].iloc[0]
+            final_loss = combined["loss"].iloc[-1]
             improvement = (
                 ((initial_loss - final_loss) / initial_loss) * 100
                 if initial_loss > 0
                 else 0
             )
             self._info_msg(
-                f"Training improvement: {improvement:.1f}% ({initial_loss:.6f} → {final_loss:.6f})"
+                f"Training improvement: {improvement:.1f}%"
+                f" ({initial_loss:.6f} → {final_loss:.6f})"
             )
 
         self._info_msg(
-            f"Combined {len(combined_data)} training records from {len(training_data)} files"
+            f"Combined {len(combined)} training records from {len(valid)} file(s)"
         )
-        return combined_data
+        return combined
 
     def plot_training_history(
         self, model_key: dict, save_path: Union[Path, str, None] = None
@@ -1971,8 +2093,7 @@ class Model(SpyglassMixin, dj.Computed):
         if model_path.suffix not in [".yml", ".yaml"]:
             raise ValueError("DLC model path must be a .yml or .yaml file")
 
-        with open(model_path, "r") as f:
-            config = yaml.safe_load(f)
+        config = load_yaml(model_path)
 
         # Step 1: Extract and insert skeleton from DLC config
         skeleton_config = {
@@ -2421,14 +2542,11 @@ class Model(SpyglassMixin, dj.Computed):
                 else:
                     # Try to read config to verify it's valid YAML
                     try:
-                        import yaml
-
-                        with open(model_path) as f:
-                            config = yaml.safe_load(f)
-                            if "project_path" not in config:
-                                warnings.append(
-                                    "DLC config missing 'project_path' field"
-                                )
+                        config = load_yaml(model_path)
+                        if "project_path" not in config:
+                            warnings.append(
+                                "DLC config missing 'project_path' field"
+                            )
                     except Exception as e:
                         warnings.append(f"Could not parse DLC config: {e}")
 
@@ -2592,12 +2710,6 @@ class Model(SpyglassMixin, dj.Computed):
 
         from spyglass.position.v2.estim import PoseEstim
 
-        return PoseEstim().run_inference(
-            model_key, video_path, save_as_csv, destfolder, **kwargs
-        )
-        return PoseEstim().run_inference(
-            model_key, video_path, save_as_csv, destfolder, **kwargs
-        )
         return PoseEstim().run_inference(
             model_key, video_path, save_as_csv, destfolder, **kwargs
         )

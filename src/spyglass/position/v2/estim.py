@@ -580,8 +580,9 @@ class NDXPoseBuilder(BaseMixin):
         """
         import pynwb
 
-        with pynwb.NWBHDF5IO(
-            path=str(analysis_abs_path), mode="a", load_namespaces=True
+        nwb_writer_cls = self._get_nwb_writer_cls()
+        with nwb_writer_cls().write(
+            path=str(analysis_abs_path), mode="a"
         ) as io:
             nwbf = io.read()
             if "behavior" not in nwbf.processing:
@@ -628,6 +629,45 @@ class PoseEstim(SpyglassMixin, dj.Computed):
     -> [nullable] AnalysisNwbfile
     """
 
+    # Dependency injection - default to real implementations
+    # Tests can override these to inject stubs without unittest.mock.patch
+    _inference_runner_cls = None  # Will be set to PoseInferenceRunner
+    _nwb_builder_cls = None  # Will be set to NDXPoseBuilder
+    _nwb_reader_cls = None  # Will be set to RealNWBReader
+    _nwb_writer_cls = None  # Will be set to RealNWBWriter
+
+    @classmethod
+    def _get_inference_runner_cls(cls):
+        """Get the inference runner class, defaulting to PoseInferenceRunner."""
+        if cls._inference_runner_cls is None:
+            return PoseInferenceRunner
+        return cls._inference_runner_cls
+
+    @classmethod
+    def _get_nwb_builder_cls(cls):
+        """Get the NWB builder class, defaulting to NDXPoseBuilder."""
+        if cls._nwb_builder_cls is None:
+            return NDXPoseBuilder
+        return cls._nwb_builder_cls
+
+    @classmethod
+    def _get_nwb_reader_cls(cls):
+        """Get the NWB reader class, defaulting to RealNWBReader."""
+        if cls._nwb_reader_cls is None:
+            from spyglass.position.utils.protocols import RealNWBReader
+
+            return RealNWBReader
+        return cls._nwb_reader_cls
+
+    @classmethod
+    def _get_nwb_writer_cls(cls):
+        """Get the NWB writer class, defaulting to RealNWBWriter."""
+        if cls._nwb_writer_cls is None:
+            from spyglass.position.utils.protocols import RealNWBWriter
+
+            return RealNWBWriter
+        return cls._nwb_writer_cls
+
     def insert1(self, row, **kwargs):
         """Insert a single row, allowing direct inserts outside of populate.
 
@@ -654,6 +694,7 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         dlc_output_path: Union[Path, str],
         nwb_file_name: Union[Path, str, None] = None,
         pose_estimation_name: str = "PoseEstimation",
+        nwb_writer_cls=None,
     ) -> Path:
         """Load DLC inference output (h5 or csv) into NWB file with ndx-pose.
 
@@ -666,6 +707,8 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             on the DLC output file, by default None
         pose_estimation_name : str, optional
             Name for the PoseEstimation object in NWB, by default "PoseEstimation"
+        nwb_writer_cls : class, optional
+            NWB writer class for dependency injection, by default None
 
         Returns
         -------
@@ -735,7 +778,12 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             io_mode = "w"
 
         # Build ndx-pose structure
-        with NWBHDF5IO(str(nwb_path), mode=io_mode) as io:
+        if nwb_writer_cls is None:
+            from spyglass.position.utils.protocols import RealNWBWriter
+
+            nwb_writer_cls = RealNWBWriter
+
+        with nwb_writer_cls().write(str(nwb_path), mode=io_mode) as io:
             if io_mode == "r+":
                 nwbfile = io.read()
             else:
@@ -831,6 +879,7 @@ class PoseEstim(SpyglassMixin, dj.Computed):
     def load_from_nwb(
         nwb_file_path: Union[Path, str],
         pose_estimation_name: str = None,
+        nwb_reader_cls=None,
     ) -> dict:
         """Load pose estimation data from existing ndx-pose NWB file.
 
@@ -845,6 +894,8 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         pose_estimation_name : str, optional
             Name of specific PoseEstimation object to load. If None, uses the
             first PoseEstimation found, by default None
+        nwb_reader_cls : class, optional
+            NWB reader class for dependency injection, by default None
 
         Returns
         -------
@@ -893,7 +944,12 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         logger.info_msg(f"Loading pose data from NWB: {nwb_file_path}")
 
         # Read NWB file and validate structure
-        with NWBHDF5IO(str(nwb_file_path), mode="r") as io:
+        if nwb_reader_cls is None:
+            from spyglass.position.utils.protocols import RealNWBReader
+
+            nwb_reader_cls = RealNWBReader
+
+        with nwb_reader_cls().read(str(nwb_file_path)) as io:
             nwbfile = io.read()
 
             if "behavior" not in nwbfile.processing:  # pragma: no cover
@@ -1023,7 +1079,8 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         nwb_path = nwb_file_matches.fetch1("analysis_file_abs_path")
 
         # Read pose data from NWB
-        with NWBHDF5IO(str(nwb_path), mode="r") as io:
+        nwb_reader_cls = self._get_nwb_reader_cls()
+        with nwb_reader_cls().read(str(nwb_path)) as io:
             nwbfile = io.read()
 
             if "behavior" not in nwbfile.processing:
@@ -1305,7 +1362,7 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         self._info_msg(f"Running inference with {tool} model: {model_key}")
 
         if tool == "DLC":
-            runner = PoseInferenceRunner()
+            runner = self._get_inference_runner_cls()()
             return runner.run_dlc_inference(
                 model_info, video_path, save_as_csv, destfolder, **kwargs
             )
@@ -1363,7 +1420,7 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         video_keys = [str(p) for p in (VidFileGroup.File & key).fetch("KEY")]
 
         # Build pose estimation using helper class
-        builder = NDXPoseBuilder()
+        builder = self._get_nwb_builder_cls()()
         pose_estimation, nwb_skeleton = builder.build_pose_estimation(
             pose_df=pose_df,
             bodyparts=bodyparts,
@@ -2148,34 +2205,18 @@ class PoseV2(SpyglassMixin, dj.Computed):
     def make(self, key):
         """Process raw pose estimation with orientation, centroid, and smoothing.
 
-        This method:
-        1. Fetches raw pose data from PoseEstim
-        2. Applies likelihood thresholding
-        3. Calculates orientation
-        4. Calculates centroid
-        5. Applies interpolation and smoothing
-        6. Calculates velocity
-        7. Stores results in NWB file
+        1. Fail fast: verify NWB link
+        2. Fetch raw pose DataFrame and parameters
+        3. Delegate computation to compute_pose_outputs (pure, no DB)
+        4. Store results in NWB and insert row
 
         Parameters
         ----------
         key : dict
             Primary key from PoseSelection
         """
-        from spyglass.position.utils.centroid import calculate_centroid
-        from spyglass.position.utils.interpolation import (
-            get_smoothing_function,
-            interp_position,
-        )
-        from spyglass.position.utils.orientation import (
-            bisector_orientation,
-            get_span_start_stop,
-            no_orientation,
-            smooth_orientation,
-            two_pt_orientation,
-        )
+        from spyglass.position.utils.pose_processing import compute_pose_outputs
 
-        # Fail fast: verify Nwbfile link before any expensive computation.
         nwb_file_name = self._get_nwb_file_name(key)
         estim_entry = (PoseEstim & key).fetch1()
         if not estim_entry.get("analysis_file_name") or nwb_file_name is None:
@@ -2186,55 +2227,25 @@ class PoseV2(SpyglassMixin, dj.Computed):
                 "registered Nwbfile before populating."
             )
 
-        # Fetch raw pose data
         self._info_msg(f"Processing pose for: {key['model_id']}")
         pose_df = (PoseEstim & key).fetch1_dataframe()
-
-        # Fetch parameters
         params = (PoseParams & key).fetch1()
-        orient_params = params["orient"]
-        centroid_params = params["centroid"]
-        smooth_params = params["smoothing"]
 
-        # Get sampling rate from timestamps
-        timestamps = pose_df.index.values
-        sampling_rate = 1 / np.median(np.diff(timestamps))
-
-        # Step 1: Apply likelihood thresholding
-        likelihood_thresh = smooth_params.get("likelihood_thresh", 0.95)
-        pose_df = self._apply_likelihood_threshold(pose_df, likelihood_thresh)
-
-        # Step 2: Calculate orientation
-        self._info_msg("Calculating orientation...")
-        orientation = self._calculate_orientation(
-            pose_df, orient_params, timestamps, sampling_rate
+        outputs = compute_pose_outputs(
+            pose_df,
+            params["orient"],
+            params["centroid"],
+            params["smoothing"],
         )
 
-        # Step 3: Calculate centroid
-        self._info_msg("Calculating centroid...")
-        centroid = self._calculate_centroid(pose_df, centroid_params)
-
-        # Step 4: Apply interpolation and smoothing to centroid
-        self._info_msg("Smoothing centroid...")
-        centroid_smooth = self._smooth_position(
-            centroid, timestamps, sampling_rate, smooth_params
-        )
-
-        # Step 5: Calculate velocity
-        self._info_msg("Calculating velocity...")
-        velocity = self._calculate_velocity(
-            centroid_smooth, timestamps, sampling_rate
-        )
-
-        # Step 6: Store results (nwb_file_name validated at top of make())
         self._info_msg("Storing results in NWB...")
         analysis_file_name, obj_ids = self._store_pose_nwb(
             {**key, "nwb_file_name": nwb_file_name},
-            orientation,
-            centroid_smooth,
-            velocity,
-            timestamps,
-            sampling_rate,
+            outputs["orientation"],
+            outputs["centroid"],
+            outputs["velocity"],
+            outputs["timestamps"],
+            outputs["sampling_rate"],
         )
         self.insert1(
             {
@@ -2251,44 +2262,11 @@ class PoseV2(SpyglassMixin, dj.Computed):
     def _apply_likelihood_threshold(
         self, pose_df: pd.DataFrame, likelihood_thresh: float
     ) -> pd.DataFrame:
-        """Set position to NaN where likelihood is below threshold.
+        from spyglass.position.utils.pose_processing import (
+            apply_likelihood_threshold,
+        )
 
-        Parameters
-        ----------
-        pose_df : pd.DataFrame
-            Pose DataFrame with MultiIndex columns (scorer, bodypart, coord)
-        likelihood_thresh : float
-            Likelihood threshold (0-1)
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with low-likelihood positions set to NaN
-        """
-        # MultiIndex structure: (scorer, bodypart, coord)
-        # coord can be 'x', 'y', 'likelihood'
-        idx = pd.IndexSlice
-
-        # Get all bodyparts (level 1 in MultiIndex)
-        bodyparts = pose_df.columns.get_level_values(1).unique()
-
-        for bodypart in bodyparts:
-            # Check if likelihood column exists
-            try:
-                likelihood = pose_df.loc[:, idx[:, bodypart, "likelihood"]]
-                # Set x, y to NaN where likelihood < threshold
-                low_likelihood = likelihood.values.flatten() < likelihood_thresh
-                pose_df.loc[low_likelihood, idx[:, bodypart, ["x", "y"]]] = (
-                    np.nan
-                )
-            except KeyError:
-                # No likelihood column for this bodypart, skip
-                self._warn_msg(
-                    f"No likelihood column for {bodypart}, skipping threshold"
-                )
-                continue
-
-        return pose_df
+        return apply_likelihood_threshold(pose_df, likelihood_thresh)
 
     @staticmethod
     def _get_nwb_file_name(key: dict):
@@ -2502,64 +2480,15 @@ class PoseV2(SpyglassMixin, dj.Computed):
     def _calculate_velocity(
         position: np.ndarray, timestamps: np.ndarray, sampling_rate: float
     ) -> np.ndarray:
-        """Calculate velocity from position.
+        from spyglass.position.utils.pose_processing import calculate_velocity
 
-        Parameters
-        ----------
-        position : np.ndarray
-            Position array, shape (n_frames, 2)
-        timestamps : np.ndarray
-            Timestamps
-        sampling_rate : float
-            Sampling rate in Hz
-
-        Returns
-        -------
-        np.ndarray
-            Velocity in cm/s, shape (n_frames,)
-        """
-        # Calculate displacement
-        dx = np.diff(position[:, 0])
-        dy = np.diff(position[:, 1])
-        displacement = np.sqrt(dx**2 + dy**2)
-
-        # Calculate time differences
-        dt = np.diff(timestamps)
-
-        # Velocity = displacement / time
-        velocity = displacement / dt
-
-        # Pad with NaN at the beginning to match length
-        velocity = np.concatenate([[np.nan], velocity])
-
-        return velocity
+        return calculate_velocity(position, timestamps, sampling_rate)
 
     @staticmethod
     def _flatten_multiindex(pose_df: pd.DataFrame) -> pd.DataFrame:
-        """Flatten MultiIndex columns to single level.
+        from spyglass.position.utils.general import flatten_multiindex
 
-        Converts (scorer, bodypart, coord) to (bodypart, coord)
-
-        Parameters
-        ----------
-        pose_df : pd.DataFrame
-            DataFrame with MultiIndex columns
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with (bodypart, coord) columns
-        """
-        # Check if already flattened
-        if not isinstance(pose_df.columns, pd.MultiIndex):
-            return pose_df
-
-        # Flatten by dropping scorer level (level 0)
-        if pose_df.columns.nlevels == 3:
-            # Drop scorer level, keep bodypart and coord
-            pose_df.columns = pose_df.columns.droplevel(0)
-
-        return pose_df
+        return flatten_multiindex(pose_df)
 
     def _store_pose_nwb(
         self,

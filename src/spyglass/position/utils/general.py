@@ -17,7 +17,33 @@ import numpy as np
 
 from spyglass.common.common_behav import VideoFile
 from spyglass.settings import dlc_output_dir, dlc_video_dir, raw_dir
+import pandas as pd
+
 from spyglass.utils.logging import logger, stream_handler
+
+
+def flatten_multiindex(pose_df: "pd.DataFrame") -> "pd.DataFrame":
+    """Flatten a 3-level MultiIndex DataFrame to 2 levels by dropping scorer.
+
+    Converts columns from (scorer, bodypart, coord) to (bodypart, coord).
+    DataFrames that are already 2-level or non-MultiIndex are returned as-is.
+
+    Parameters
+    ----------
+    pose_df : pd.DataFrame
+        DataFrame whose columns may be a 3-level MultiIndex.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with at most 2 column levels.
+    """
+    if not isinstance(pose_df.columns, pd.MultiIndex):
+        return pose_df
+    if pose_df.columns.nlevels == 3:
+        pose_df = pose_df.copy()
+        pose_df.columns = pose_df.columns.droplevel(0)
+    return pose_df
 
 
 def get_param_names(func):
