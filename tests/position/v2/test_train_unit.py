@@ -230,7 +230,7 @@ class TestModelParams:
             "model_params_name": test_params["model_params_name"]
         }
         if existing:
-            existing.delete()
+            existing.delete(safemode=False)
 
         # Test insert - this will validate against real strategy
         initial_count = len(model_params)

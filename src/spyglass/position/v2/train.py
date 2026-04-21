@@ -31,8 +31,8 @@ from spyglass.position.utils import (
     get_param_names,
     suppress_print_from_package,
 )
-from spyglass.position.utils.yaml_io import load_yaml
 from spyglass.position.utils.tool_strategies import ToolStrategyFactory
+from spyglass.position.utils.yaml_io import load_yaml
 from spyglass.position.v2.video import VidFileGroup
 from spyglass.settings import dlc_project_dir
 from spyglass.utils import SpyglassMixin
@@ -1040,7 +1040,6 @@ class ModelParams(SpyglassMixin, dj.Lookup):
     ]
 
     @classmethod
-    @property
     def tool_info(cls) -> dict:
         """Return tool information using strategy pattern.
 
@@ -1050,26 +1049,30 @@ class ModelParams(SpyglassMixin, dj.Lookup):
             Tool information with structure:
             {tool_name: {"required": set, "accepted": set, "skipped": set, "aliases": dict}}
         """
+        if hasattr(cls, "_cached_tool_info"):
+            return cls._cached_tool_info
+
         tool_info = {}
 
-        # Build tool_info for each registered strategy
-        for tool_name in ToolStrategyFactory.get_available_tools():
-            try:
-                strategy = ToolStrategyFactory.create_strategy(tool_name)
-                tool_info[tool_name] = {
-                    "required": strategy.get_required_params(),
-                    "accepted": strategy.get_accepted_params(),
-                    "skipped": strategy.get_skipped_params(),
-                    "aliases": strategy.get_parameter_aliases(),
-                }
-            except Exception as e:
-                # Skip tools that fail to initialize
-                # Use logger warnings instead of warnings module
-                cls._warn_msg(
-                    f"Could not initialize strategy for {tool_name}: {e}"
-                )
-                continue
+        try:
+            # Build tool_info for each registered strategy
+            for tool_name in ToolStrategyFactory.get_available_tools():
+                try:
+                    strategy = ToolStrategyFactory.create_strategy(tool_name)
+                    tool_info[tool_name] = {
+                        "required": strategy.get_required_params(),
+                        "accepted": strategy.get_accepted_params(),
+                        "skipped": strategy.get_skipped_params(),
+                        "aliases": strategy.get_parameter_aliases(),
+                    }
+                except Exception:
+                    # Skip tools that fail to initialize
+                    continue
+        except Exception:
+            # Return empty dict if anything fails
+            tool_info = {}
 
+        cls._cached_tool_info = tool_info
         return tool_info
 
     def get_accepted_params(self, tool: str) -> set:
@@ -1128,7 +1131,7 @@ class ModelParams(SpyglassMixin, dj.Lookup):
         params = key["params"].copy()
 
         # Filter out skipped parameters using tool_info
-        tool_info = self.tool_info
+        tool_info = self.tool_info()
         if this_tool in tool_info:
             skipped = tool_info[this_tool]["skipped"]
             params = {k: v for k, v in params.items() if k not in skipped}
@@ -1177,6 +1180,7 @@ class ModelSelection(SpyglassMixin, dj.Manual):
     definition = """
     -> ModelParams
     -> VidFileGroup
+    model_selection_id: varchar(32)
     ---
     parent_id=NULL: varchar(32) # ID of parent model, if any
     """

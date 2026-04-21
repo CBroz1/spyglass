@@ -162,8 +162,8 @@ class TestModelParamsToolSupport:
 
     def test_tool_info_contains_all_tools(self, model_params):
         """Test tool_info contains all supported tools."""
-        assert "DLC" in model_params.tool_info
-        assert "ndx-pose" in model_params.tool_info
+        assert "DLC" in model_params.tool_info()
+        assert "ndx-pose" in model_params.tool_info()
 
     def test_dlc_tool_supported(self, model_params):
         """Test DLC tool is supported."""

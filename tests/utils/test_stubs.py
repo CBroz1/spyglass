@@ -4,8 +4,9 @@ These show how to inject test doubles without using unittest.mock.patch(),
 enabling pure unit testing of business logic.
 """
 
-from typing import Dict, List, Optional, Union
 from pathlib import Path
+from typing import Dict, List, Optional, Union
+
 import pandas as pd
 
 
@@ -194,4 +195,6 @@ class MockNWBFile:
         """Initialize with mock data structure."""
         self.data = data
         # Mock processing modules
+        self.processing = data.get("processing", {})
+        self.processing = data.get("processing", {})
         self.processing = data.get("processing", {})

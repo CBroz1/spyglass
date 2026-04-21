@@ -274,7 +274,8 @@ class TestPoseParamsValidation:
         from spyglass.position.v2.estim import PoseParams
 
         with pytest.raises(
-            ValueError, match="2pt centroid requires exactly 2.*got 1"
+            ValueError,
+            match="2pt centroid requires exactly 2 point\\(s\\), got 1",
         ):
             PoseParams.insert_custom_dict(
                 params_name="invalid",
@@ -296,7 +297,8 @@ class TestPoseParamsValidation:
         from spyglass.position.v2.estim import PoseParams
 
         with pytest.raises(
-            ValueError, match="4pt centroid requires exactly 4.*got 1"
+            ValueError,
+            match="4pt centroid requires exactly 4 point\\(s\\), got 2",
         ):
             PoseParams.insert_custom_dict(
                 params_name="invalid",

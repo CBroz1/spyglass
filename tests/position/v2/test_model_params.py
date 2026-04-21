@@ -10,24 +10,24 @@ class TestModelParamsSLEAP:
         """Test that SLEAP is registered in tool_info."""
         ModelParams = pv2_train.ModelParams
 
-        assert "SLEAP" in ModelParams.tool_info
-        assert "required" in ModelParams.tool_info["SLEAP"]
-        assert "accepted" in ModelParams.tool_info["SLEAP"]
-        assert "skipped" in ModelParams.tool_info["SLEAP"]
-        assert "aliases" in ModelParams.tool_info["SLEAP"]
+        assert "SLEAP" in ModelParams.tool_info()
+        assert "required" in ModelParams.tool_info()["SLEAP"]
+        assert "accepted" in ModelParams.tool_info()["SLEAP"]
+        assert "skipped" in ModelParams.tool_info()["SLEAP"]
+        assert "aliases" in ModelParams.tool_info()["SLEAP"]
 
     def test_sleap_required_params(self, pv2_train):
         """Test SLEAP required parameters."""
         ModelParams = pv2_train.ModelParams
 
-        required = ModelParams.tool_info["SLEAP"]["required"]
+        required = ModelParams.tool_info()["SLEAP"]["required"]
         assert "model_type" in required
 
     def test_sleap_accepted_params(self, pv2_train):
         """Test SLEAP accepted parameters."""
         ModelParams = pv2_train.ModelParams
 
-        accepted = ModelParams.tool_info["SLEAP"]["accepted"]
+        accepted = ModelParams.tool_info()["SLEAP"]["accepted"]
 
         # Architecture params
         assert "model_type" in accepted
