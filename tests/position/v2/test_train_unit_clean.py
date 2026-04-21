@@ -158,7 +158,9 @@ class TestModelMethods:
                             # Verify the DLC training method was called (proves we got through all the setup)
                             mock_train.assert_called_once()
 
-    def test_train_method_basic(self, model, dlc_project_config):
+    def test_train_method_basic(
+        self, model, dlc_project_config, skip_if_no_dlc
+    ):
         """Test basic Model.train() functionality using real DLC training with minimal params."""
         # Mock existing model entry instead of fetching from empty database
         model_key = {"model_id": "existing_model_123"}

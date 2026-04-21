@@ -35,16 +35,22 @@ class TestHelperFunctions:
     def test_resolve_model_path(self):
         """Test resolve_model_path function."""
         from spyglass.position.v2.train import resolve_model_path
+        from spyglass.settings import dlc_project_dir
 
         # Test absolute path
         abs_path = "/absolute/path/to/model.pkl"
         resolved = resolve_model_path(abs_path)
         assert resolved == Path(abs_path)
 
-        # Test relative path (no dlc_project_dir configured)
+        # Test relative path behavior depends on dlc_project_dir setting
         rel_path = "relative/path/model.pkl"
         resolved = resolve_model_path(rel_path)
-        expected = Path.cwd() / rel_path
+
+        # If dlc_project_dir is configured, it uses that as base
+        if dlc_project_dir:
+            expected = Path(dlc_project_dir) / rel_path
+        else:
+            expected = Path.cwd() / rel_path
         assert resolved == expected
 
     def test_to_stored_path(self):
@@ -191,7 +197,7 @@ class TestModelMake:
 
             with (
                 patch("spyglass.position.v2.train.NWBHDF5IO"),
-                patch("spyglass.position.v2.train.NWBFile") as mock_nwb,
+                patch("pynwb.NWBFile") as mock_nwb,
                 patch(
                     "spyglass.position.v2.train.AnalysisNwbfile"
                 ) as mock_analysis,
@@ -253,9 +259,11 @@ class TestModelParams:
             mock_strategy.append_aliases.return_value = test_params["params"]
             mock_factory.create_strategy.return_value = mock_strategy
 
-            # Mock tool_info property
+            # Mock tool_info method
             with patch.object(
-                model_params, "tool_info", {"DLC": {"skipped": set()}}
+                model_params,
+                "tool_info",
+                return_value={"DLC": {"skipped": set()}},
             ):
                 # Mock existing entry check
                 with patch.object(
@@ -294,9 +302,11 @@ class TestModelParams:
             mock_strategy.append_aliases.return_value = test_params["params"]
             mock_factory.create_strategy.return_value = mock_strategy
 
-            # Mock tool_info
+            # Mock tool_info method
             with patch.object(
-                model_params, "tool_info", {"DLC": {"skipped": set()}}
+                model_params,
+                "tool_info",
+                return_value={"DLC": {"skipped": set()}},
             ):
                 # Mock existing entry found
                 existing_key = {
@@ -334,21 +344,63 @@ class TestModelParams:
 
     def test_get_accepted_params(self, pv2_train, model_params):
         """Test get_accepted_params method."""
-        with patch(
-            "spyglass.position.utils.tool_strategies.ToolStrategyFactory"
-        ) as mock_factory:
-            mock_strategy = MagicMock()
-            mock_strategy.get_accepted_params.return_value = {
-                "param1",
-                "param2",
-                "param3",
-            }
-            mock_factory.create_strategy.return_value = mock_strategy
+        # Use actual DLC parameters instead of mocking to match real behavior
+        result = model_params.get_accepted_params("DLC")
 
-            result = model_params.get_accepted_params("DLC")
+        # Verify we get the expected DLC parameter names
+        # These are the actual parameters supported by DLC strategy
+        expected_dlc_params = {
+            "Task",
+            "TrainingFraction",
+            "adam_lr",
+            "allow_growth",
+            "augmenter_type",
+            "batch_size",
+            "bodyparts",
+            "corner2move2",
+            "crop_pad",
+            "cropping",
+            "dataset_type",
+            "date",
+            "decay_factor",
+            "decay_steps",
+            "deterministic",
+            "displayiters",
+            "global_scale",
+            "init_weights",
+            "intermediate_supervision",
+            "intermediate_supervision_layer",
+            "iteration",
+            "location_refinement",
+            "locref_huber_loss",
+            "locref_loss_weight",
+            "locref_stdev",
+            "maxiters",
+            "mirror",
+            "model_prefix",
+            "move2corner",
+            "multi_step",
+            "net_type",
+            "numframes2pick",
+            "project_path",
+            "regularize",
+            "saveiters",
+            "scoremap_dir",
+            "scorer",
+            "shuffle",
+            "skeleton",
+            "snapshotindex",
+            "snapshots_epoch",
+            "trainingsetindex",
+            "warmup_epochs",
+            "weight_decay",
+            "x1",
+            "x2",
+            "y1",
+            "y2",
+        }
 
-            assert result == {"param1", "param2", "param3"}
-            mock_factory.create_strategy.assert_called_once_with("DLC")
+        assert set(result) == expected_dlc_params
 
 
 class TestModelTrain:
@@ -514,7 +566,10 @@ class TestModelTrain:
             with patch.object(
                 model, "fetch1", side_effect=Exception("No entries")
             ):
-                with pytest.raises(ValueError, match="doesn't exist"):
+                with pytest.raises(
+                    ValueError,
+                    match="Model not found in database.*Cannot continue training",
+                ):
                     model.train({"model_id": "nonexistent"})
 
 

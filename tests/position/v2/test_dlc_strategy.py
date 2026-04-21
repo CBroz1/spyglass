@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 
-def test_prepare_training_dataset():
+def test_prepare_training_dataset(skip_if_no_dlc):
     """Test _prepare_training_dataset() method with mocked DLC calls."""
     with patch.dict(
         "sys.modules",
@@ -58,7 +58,7 @@ def test_prepare_training_dataset():
             model_instance._info_msg.assert_called_once()
 
 
-def test_execute_training_basic():
+def test_execute_training_basic(skip_if_no_dlc):
     """Test _execute_training() method with mocked DLC calls."""
     with patch.dict(
         "sys.modules",
@@ -96,7 +96,7 @@ def test_execute_training_basic():
             )
 
 
-def test_execute_training_test_mode():
+def test_execute_training_test_mode(skip_if_no_dlc):
     """Test _execute_training() adjustments in test mode."""
     with patch.dict(
         "sys.modules",
@@ -136,7 +136,7 @@ def test_execute_training_test_mode():
             assert expected_call.get("save_epochs") == 1
 
 
-def test_localize_trained_model_with_snapshots(tmp_path):
+def test_localize_trained_model_with_snapshots(tmp_path, skip_if_no_dlc):
     """Test _localize_trained_model() with existing snapshot files."""
     with patch.dict(
         "sys.modules",
@@ -211,7 +211,7 @@ def test_localize_trained_model_with_snapshots(tmp_path):
             assert datetime.now().strftime("%Y%m%d") in model_id
 
 
-def test_localize_trained_model_no_snapshots(tmp_path):
+def test_localize_trained_model_no_snapshots(tmp_path, skip_if_no_dlc):
     """Test _localize_trained_model() when no snapshot files exist."""
     with patch.dict(
         "sys.modules",
@@ -271,7 +271,7 @@ def test_localize_trained_model_no_snapshots(tmp_path):
             )
 
 
-def test_localize_trained_model_missing_directory(tmp_path):
+def test_localize_trained_model_missing_directory(tmp_path, skip_if_no_dlc):
     """Test _localize_trained_model() error when training directory missing."""
     with patch.dict(
         "sys.modules",

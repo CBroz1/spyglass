@@ -74,7 +74,9 @@ class TestHelperFunctions:
 class TestModelMethods:
     """Test Model table methods using fixtures."""
 
-    def test_make_method_basic(self, pv2_train, model, model_sel, model_params):
+    def test_make_method_basic(
+        self, pv2_train, model, model_sel, model_params, skip_if_no_dlc
+    ):
         """Test basic Model.make() functionality."""
         # Mock the strategy pattern components
         with patch(
@@ -179,7 +181,7 @@ class TestModelMethods:
             assert result.endswith(".nwb")
             mock_nwbfile.add_scratch.assert_called()
 
-    def test_train_method_basic(self, pv2_train, model):
+    def test_train_method_basic(self, pv2_train, model, skip_if_no_dlc):
         """Test basic Model.train() functionality."""
         # Get an existing model from the database
         existing_models = model.fetch("KEY")
@@ -216,7 +218,7 @@ class TestModelMethods:
 class TestModelParams:
     """Test ModelParams table methods."""
 
-    def test_insert1_basic(self, pv2_train, model_params):
+    def test_insert1_basic(self, pv2_train, model_params, skip_if_no_dlc):
         """Test basic ModelParams.insert1() functionality."""
         test_params = {
             "model_params_name": "unit_test_params",

@@ -275,7 +275,7 @@ class TestPoseParamsValidation:
 
         with pytest.raises(
             ValueError,
-            match="2pt centroid requires exactly 2 point\\(s\\), got 1",
+            match="2pt centroid params missing required keys.*max_LED_separation",
         ):
             PoseParams.insert_custom_dict(
                 params_name="invalid",
@@ -298,7 +298,7 @@ class TestPoseParamsValidation:
 
         with pytest.raises(
             ValueError,
-            match="4pt centroid requires exactly 4 point\\(s\\), got 2",
+            match="4pt centroid requires points.*greenLED.*redLED",
         ):
             PoseParams.insert_custom_dict(
                 params_name="invalid",

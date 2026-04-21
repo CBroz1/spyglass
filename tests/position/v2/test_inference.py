@@ -394,6 +394,7 @@ class TestPoseEstimMakeValidation:
         model,
         mock_ndx_pose_nwb_file,
         tmp_path,
+        skip_if_no_dlc,
     ):
         """PoseEstim.make() raises ValueError when VidFileGroup has no NWB parent.
 

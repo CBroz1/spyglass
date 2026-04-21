@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 
-def test_dlc_strategy_prepare_dataset(pv2_train, tmp_path):
+def test_dlc_strategy_prepare_dataset(pv2_train, tmp_path, skip_if_no_dlc):
     """Test _prepare_training_dataset parameter filtering."""
 
     # Import within test to use established database connection
@@ -47,7 +47,7 @@ def test_dlc_strategy_prepare_dataset(pv2_train, tmp_path):
         model_instance._info_msg.assert_called()
 
 
-def test_dlc_strategy_execute_training(pv2_train, tmp_path):
+def test_dlc_strategy_execute_training(pv2_train, tmp_path, skip_if_no_dlc):
     """Test _execute_training integer conversion and test mode."""
 
     from spyglass.position.utils.tool_strategies import DLCStrategy
@@ -84,7 +84,9 @@ def test_dlc_strategy_execute_training(pv2_train, tmp_path):
         assert call_args["trainingsetindex"] == 0
 
 
-def test_dlc_strategy_execute_training_test_mode(pv2_train, tmp_path):
+def test_dlc_strategy_execute_training_test_mode(
+    pv2_train, tmp_path, skip_if_no_dlc
+):
     """Test _execute_training test mode adjustments."""
 
     from spyglass.position.utils.tool_strategies import DLCStrategy
@@ -115,7 +117,7 @@ def test_dlc_strategy_execute_training_test_mode(pv2_train, tmp_path):
         assert call_args.get("save_epochs") == 1
 
 
-def test_dlc_strategy_localize_model(pv2_train, tmp_path):
+def test_dlc_strategy_localize_model(pv2_train, tmp_path, skip_if_no_dlc):
     """Test _localize_trained_model snapshot selection."""
 
     from spyglass.position.utils.tool_strategies import DLCStrategy
@@ -176,7 +178,9 @@ def test_dlc_strategy_localize_model(pv2_train, tmp_path):
         assert model_id.startswith("mdl-")
 
 
-def test_dlc_strategy_localize_model_no_snapshots(pv2_train, tmp_path):
+def test_dlc_strategy_localize_model_no_snapshots(
+    pv2_train, tmp_path, skip_if_no_dlc
+):
     """Test _localize_trained_model with no snapshots."""
 
     from spyglass.position.utils.tool_strategies import DLCStrategy
@@ -225,7 +229,9 @@ def test_dlc_strategy_localize_model_no_snapshots(pv2_train, tmp_path):
         assert "snapshot: 0" in info_call
 
 
-def test_dlc_strategy_localize_model_missing_directory(pv2_train, tmp_path):
+def test_dlc_strategy_localize_model_missing_directory(
+    pv2_train, tmp_path, skip_if_no_dlc
+):
     """Test _localize_trained_model error for missing training directory."""
 
     from spyglass.position.utils.tool_strategies import DLCStrategy
