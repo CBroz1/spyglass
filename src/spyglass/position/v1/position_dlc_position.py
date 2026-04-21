@@ -562,11 +562,3 @@ def get_subthresh_inds(
     if ret_sub_thresh:
         return all_nan_inds, sub_thresh_percent
     return all_nan_inds
-    if ret_sub_thresh:
-        return all_nan_inds, sub_thresh_percent
-    return all_nan_inds
-    if ret_sub_thresh:
-        return all_nan_inds, sub_thresh_percent
-    return all_nan_inds
-    return all_nan_inds
-    return all_nan_inds

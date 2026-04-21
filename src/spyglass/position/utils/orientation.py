@@ -264,17 +264,17 @@ def interp_orientation(
     df_orient = df["orientation"]
 
     for ind, (span_start, span_stop) in enumerate(spans_to_interp):
-        idx_span = idx[span_start:span_stop]
+        span_times = df.index[span_start : span_stop + 1]
 
         # Can't interpolate if span extends to end
         if (span_stop + 1) >= len(df):
-            df.loc[idx_span, idx["orientation"]] = np.nan
+            df.loc[span_times, "orientation"] = np.nan
             logger.info_msg(no_x_msg.format(ind=ind, x="stop"))
             continue
 
         # Can't interpolate if span starts at beginning
         if span_start < 1:
-            df.loc[idx_span, idx["orientation"]] = np.nan
+            df.loc[span_times, "orientation"] = np.nan
             logger.info_msg(no_x_msg.format(ind=ind, x="start"))
             continue
 

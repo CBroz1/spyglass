@@ -111,17 +111,17 @@ def interp_position(
         )
 
     for ind, (span_start, span_stop) in enumerate(spans_to_interp):
-        idx_span = idx[span_start:span_stop]
+        span_times = pos_df.index[span_start : span_stop + 1]
 
         # Can't interpolate if span extends to end
         if (span_stop + 1) >= len(pos_df):
-            pos_df.loc[idx_span, idx[[x_col, y_col]]] = np.nan
+            pos_df.loc[span_times, [x_col, y_col]] = np.nan
             logger.info_msg(no_x_msg.format(ind=ind, coord="end"))
             continue
 
         # Can't interpolate if span starts at beginning
         if span_start < 1:
-            pos_df.loc[idx_span, idx[[x_col, y_col]]] = np.nan
+            pos_df.loc[span_times, [x_col, y_col]] = np.nan
             logger.info_msg(no_x_msg.format(ind=ind, coord="start"))
             continue
 
@@ -142,7 +142,7 @@ def interp_position(
         )
 
         if span_len > max_pts_to_interp or distance > max_cm_to_interp:
-            pos_df.loc[idx_span, idx[[x_col, y_col]]] = np.nan
+            pos_df.loc[span_times, [x_col, y_col]] = np.nan
             logger.info_msg(
                 no_interp_msg.format(start=span_start, stop=span_stop)
             )

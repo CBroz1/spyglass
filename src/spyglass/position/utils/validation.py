@@ -139,7 +139,7 @@ def validate_list(
     if condition:
         condition = f" when using {condition}"
 
-    missing_items = [x for x in option_list if x not in required_items]
+    missing_items = [x for x in required_items if x not in option_list]
     if missing_items:
         raise KeyError(
             f"{name} must contain all items in {required_items}{condition}. "
