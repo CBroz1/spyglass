@@ -345,7 +345,7 @@ class TestBackwardsCompatibility:
                 "storage": "kachery_storage",
                 "temp": "tmp",
             },
-            "dlc": {
+            "pose": {
                 "project": "projects",
                 "video": "video",
                 "output": "output",

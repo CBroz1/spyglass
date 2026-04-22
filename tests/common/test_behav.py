@@ -128,3 +128,95 @@ def test_convert_epoch(common, mini_dict, pos_interval_01):
     assert (
         ret == pos_interval_01[0]
     ), "convert_epoch_interval_name_to_position_interval_name failed"
+
+
+def test_prepare_video_entry_with_external_file(common):
+    """Test _prepare_video_entry with external_file attribute."""
+    from unittest.mock import MagicMock, Mock
+    from pathlib import Path
+
+    # Create mock video object with external_file
+    mock_device = MagicMock()
+    mock_device.name = "camera_device 1"
+    mock_device.camera_name = "test_camera"
+
+    mock_video = Mock()
+    mock_video.device = mock_device
+    mock_video.object_id = "test_object_id"
+    mock_video.name = "generic_video_name"
+    mock_video.external_file = ["file1.mp4", "file2.mp4", "file3.mp4"]
+
+    # Mock CameraDevice table to have the camera
+    key = {"test": "key"}
+
+    # Test with file_idx=None (should use index 0)
+    video_file = common.VideoFile()
+    with pytest.importorskip("unittest.mock").patch.object(
+        common.common_behav, "CameraDevice"
+    ) as mock_camera_device:
+        mock_camera_device.__and__.return_value = True  # Camera exists
+
+        result = video_file._prepare_video_entry(key, mock_video)
+
+        expected_filename = Path("file1.mp4").name
+        assert expected_filename in result["path"]
+
+
+def test_prepare_video_entry_with_file_idx(common):
+    """Test _prepare_video_entry with specific file_idx."""
+    from unittest.mock import MagicMock, Mock
+    from pathlib import Path
+
+    # Create mock video object
+    mock_device = MagicMock()
+    mock_device.name = "camera_device 2"
+    mock_device.camera_name = "test_camera"
+
+    mock_video = Mock()
+    mock_video.device = mock_device
+    mock_video.object_id = "test_object_id"
+    mock_video.name = "generic_video_name"
+    mock_video.external_file = ["file1.mp4", "file2.mp4", "file3.mp4"]
+
+    key = {"test": "key"}
+
+    # Test with file_idx=1 (should use second file)
+    video_file = common.VideoFile()
+    with pytest.importorskip("unittest.mock").patch.object(
+        common.common_behav, "CameraDevice"
+    ) as mock_camera_device:
+        mock_camera_device.__and__.return_value = True
+
+        result = video_file._prepare_video_entry(key, mock_video, file_idx=1)
+
+        expected_filename = Path("file2.mp4").name
+        assert expected_filename in result["path"]
+
+
+def test_prepare_video_entry_with_empty_external_file(common):
+    """Test _prepare_video_entry with empty external_file list."""
+    from unittest.mock import MagicMock, Mock
+
+    # Create mock video object with empty external_file
+    mock_device = MagicMock()
+    mock_device.name = "camera_device 3"
+    mock_device.camera_name = "test_camera"
+
+    mock_video = Mock()
+    mock_video.device = mock_device
+    mock_video.object_id = "test_object_id"
+    mock_video.name = "fallback_video_name"
+    mock_video.external_file = []  # Empty list
+
+    key = {"test": "key"}
+
+    video_file = common.VideoFile()
+    with pytest.importorskip("unittest.mock").patch.object(
+        common.common_behav, "CameraDevice"
+    ) as mock_camera_device:
+        mock_camera_device.__and__.return_value = True
+
+        result = video_file._prepare_video_entry(key, mock_video)
+
+        # Should use video object name as fallback
+        assert "fallback_video_name" in result["path"]

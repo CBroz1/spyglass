@@ -532,10 +532,9 @@ class VideoFile(SpyglassMixin, dj.Imported):
             if file_to_use < len(ext_files):
                 selected_ext = Path(ext_files[file_to_use])
                 video_filename = selected_ext.name
-            else:
-                # Fallback to object name if file_idx is out of bounds
+            else:  # pragma: no cover
                 video_filename = video_obj.name
-        else:
+        else:  # pragma: no cover
             video_filename = video_obj.name
 
         return dict(

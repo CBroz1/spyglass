@@ -23,8 +23,7 @@ class SpyglassLogger(logging.Logger):
             from spyglass.settings import config as sg_config
 
             return sg_config.get("test_mode", False)
-        except ImportError:
-            # Fallback if settings not available
+        except ImportError:  # pragma: no cover
             return False
 
     def info_msg(self, msg: str) -> None:
@@ -70,8 +69,10 @@ class SpyglassLogger(logging.Logger):
         log_func(msg)
 
 
-# Create dedicated Spyglass logger instance without global override
-logger = SpyglassLogger(__name__.split(".")[0])
+# Register via getLogger so the instance is in the hierarchy (caplog works)
+logging.setLoggerClass(SpyglassLogger)
+logger = logging.getLogger(__name__.split(".")[0])
+logging.setLoggerClass(logging.Logger)
 
 
 # Provide helper functions for easy access to logger methods
