@@ -29,7 +29,7 @@ from spyglass.position.v2.train import (
     resolve_model_path,
 )
 from spyglass.position.v2.video import VidFileGroup
-from spyglass.settings import dlc_output_dir
+from spyglass.settings import pose_output_dir
 from spyglass.utils import SpyglassMixin, logger
 from spyglass.utils.mixins.base import BaseMixin
 
@@ -332,8 +332,8 @@ class PoseEstimSelection(SpyglassMixin, dj.Manual):
         """
         model_id = key.get("model_id", "unknown_model")
 
-        # Try to use the configured dlc_output_dir
-        base_dir = dlc_output_dir
+        # Try to use the configured pose_output_dir
+        base_dir = pose_output_dir
         if not base_dir:
             base_dir = Path.cwd() / "pose_estimation_output"
 

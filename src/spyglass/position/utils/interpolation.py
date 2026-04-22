@@ -15,7 +15,7 @@ get_smoothing_function
     Retrieve smoothing function by name
 """
 
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable
 
 import numpy as np
 import pandas as pd
@@ -31,6 +31,104 @@ try:
     from scipy.signal import savgol_filter
 except ImportError:
     savgol_filter = None
+
+
+def _interpolate_spans_generic(
+    df: pd.DataFrame,
+    spans_to_interp: List[Tuple[int, int]],
+    get_boundary_values: Callable,
+    apply_interpolated_values: Callable,
+    validate_span: Optional[Callable] = None,
+    get_error_context: Optional[Callable] = None,
+) -> pd.DataFrame:
+    """Generic span interpolation utility for position and orientation data.
+
+    This function centralizes the common interpolation logic shared between
+    orientation and position interpolation functions.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame with time index
+    spans_to_interp : List[Tuple[int, int]]
+        List of (start_idx, stop_idx) tuples indicating NaN spans
+    get_boundary_values : Callable
+        Function that extracts boundary values for interpolation
+        Signature: (df, span_start, span_stop) -> values_dict
+    apply_interpolated_values : Callable
+        Function that applies interpolated values back to dataframe
+        Signature: (df, span_start, span_stop, interpolated_values, **kwargs) -> None
+    validate_span : Optional[Callable]
+        Optional function to validate if span should be interpolated
+        Signature: (df, span_start, span_stop, boundary_values) -> (bool, str)
+        Returns (is_valid, error_msg)
+    get_error_context : Optional[Callable]
+        Optional function to provide context for error messages
+        Signature: (ind, error_type) -> str
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with interpolated values
+    """
+    idx = pd.IndexSlice
+    default_error_msg = (
+        "Index {ind} has no {error_type}point with which to interpolate"
+    )
+
+    for ind, (span_start, span_stop) in enumerate(spans_to_interp):
+        span_times = df.index[span_start : span_stop + 1]
+
+        # Can't interpolate if span extends to end
+        if (span_stop + 1) >= len(df):
+            error_msg = (
+                get_error_context(ind, "end")
+                if get_error_context
+                else default_error_msg.format(ind=ind, error_type="end")
+            )
+            logger.info_msg(error_msg)
+            continue
+
+        # Can't interpolate if span starts at beginning
+        if span_start < 1:
+            error_msg = (
+                get_error_context(ind, "start")
+                if get_error_context
+                else default_error_msg.format(ind=ind, error_type="start")
+            )
+            logger.info_msg(error_msg)
+            continue
+
+        # Get boundary values for interpolation
+        boundary_values = get_boundary_values(df, span_start, span_stop)
+
+        # Optional validation (e.g., distance/length constraints)
+        if validate_span:
+            is_valid, validation_error = validate_span(
+                df, span_start, span_stop, boundary_values
+            )
+            if not is_valid:
+                logger.info_msg(validation_error)
+                continue
+
+        # Use timestamps BEFORE and AFTER the span for interpolation
+        time_before = df.index[span_start - 1]
+        time_after = df.index[span_stop + 1]
+        span_times = df.index[span_start : span_stop + 1]
+
+        # Perform interpolation and apply values
+        apply_interpolated_values(
+            df,
+            span_start,
+            span_stop,
+            boundary_values,
+            span_times,
+            time_before,
+            time_after,
+            idx,
+        )
+
+    return df
 
 
 def interp_position(
@@ -85,7 +183,6 @@ def interp_position(
     - Interpolation is linear between bounding points
     - Constraints prevent unrealistic interpolation across large gaps
     """
-    idx = pd.IndexSlice
     x_col, y_col = coord_cols
 
     if max_pts_to_interp is None:
@@ -93,79 +190,75 @@ def interp_position(
     if max_cm_to_interp is None:
         max_cm_to_interp = float("inf")
 
-    no_x_msg = "Index {ind} has no {coord}point with which to interpolate"
-    no_interp_msg = "Index {start} to {stop} not interpolated"
+    def get_boundary_values(df, span_start, span_stop):
+        """Extract x,y boundary values for position interpolation."""
+        return {
+            "x": [
+                df[x_col].iloc[span_start - 1],
+                df[x_col].iloc[span_stop + 1],
+            ],
+            "y": [
+                df[y_col].iloc[span_start - 1],
+                df[y_col].iloc[span_stop + 1],
+            ],
+        }
 
-    def _get_new_coord(
-        coord_vals: List[float],
-        span_start: int,
-        span_stop: int,
-        start_time: float,
-        stop_time: float,
-    ) -> np.ndarray:
-        """Interpolate coordinate values over span."""
-        return np.interp(
-            x=pos_df.index[span_start : span_stop + 1],
-            xp=[start_time, stop_time],
-            fp=[coord_vals[0], coord_vals[-1]],
-        )
-
-    for ind, (span_start, span_stop) in enumerate(spans_to_interp):
-        span_times = pos_df.index[span_start : span_stop + 1]
-
-        # Can't interpolate if span extends to end
-        if (span_stop + 1) >= len(pos_df):
-            pos_df.loc[span_times, [x_col, y_col]] = np.nan
-            logger.info_msg(no_x_msg.format(ind=ind, coord="end"))
-            continue
-
-        # Can't interpolate if span starts at beginning
-        if span_start < 1:
-            pos_df.loc[span_times, [x_col, y_col]] = np.nan
-            logger.info_msg(no_x_msg.format(ind=ind, coord="start"))
-            continue
-
-        # Get bounding coordinate values
-        x = [
-            pos_df[x_col].iloc[span_start - 1],
-            pos_df[x_col].iloc[span_stop + 1],
-        ]
-        y = [
-            pos_df[y_col].iloc[span_start - 1],
-            pos_df[y_col].iloc[span_stop + 1],
-        ]
-
-        # Check constraints
+    def validate_span(df, span_start, span_stop, boundary_values):
+        """Validate span constraints for position interpolation."""
         span_len = int(span_stop - span_start + 1)
         distance = np.linalg.norm(
-            np.array([x[0], y[0]]) - np.array([x[1], y[1]])
+            np.array([boundary_values["x"][0], boundary_values["y"][0]])
+            - np.array([boundary_values["x"][1], boundary_values["y"][1]])
         )
 
         if span_len > max_pts_to_interp or distance > max_cm_to_interp:
-            pos_df.loc[span_times, [x_col, y_col]] = np.nan
-            logger.info_msg(
-                no_interp_msg.format(start=span_start, stop=span_stop)
-            )
-            continue
+            return False, f"Index {span_start} to {span_stop} not interpolated"
+        return True, ""
 
-        # Use timestamps BEFORE and AFTER the span for interpolation
-        time_before = pos_df.index[span_start - 1]
-        time_after = pos_df.index[span_stop + 1]
-
-        # Interpolate
-        x_new = _get_new_coord(
-            x, span_start, span_stop, time_before, time_after
+    def apply_interpolated_values(
+        df,
+        span_start,
+        span_stop,
+        boundary_values,
+        span_times,
+        time_before,
+        time_after,
+        idx,
+    ):
+        """Apply interpolated position values to dataframe."""
+        # Interpolate x and y coordinates
+        x_new = np.interp(
+            x=span_times,
+            xp=[time_before, time_after],
+            fp=[boundary_values["x"][0], boundary_values["x"][1]],
         )
-        y_new = _get_new_coord(
-            y, span_start, span_stop, time_before, time_after
+        y_new = np.interp(
+            x=span_times,
+            xp=[time_before, time_after],
+            fp=[boundary_values["y"][0], boundary_values["y"][1]],
         )
 
-        # Get timestamps within the span
-        span_times = pos_df.index[span_start : span_stop + 1]
-        pos_df.loc[idx[span_times[0] : span_times[-1]], idx[x_col]] = x_new
-        pos_df.loc[idx[span_times[0] : span_times[-1]], idx[y_col]] = y_new
+        # Apply interpolated values
+        df.loc[idx[span_times[0] : span_times[-1]], idx[x_col]] = x_new
+        df.loc[idx[span_times[0] : span_times[-1]], idx[y_col]] = y_new
 
-    return pos_df
+        # Set NaN values for failed spans
+        span_times = df.index[span_start : span_stop + 1]
+        if len(x_new) == 0:  # Validation failed
+            df.loc[span_times, [x_col, y_col]] = np.nan
+
+    def get_error_context(ind, error_type):
+        """Generate error messages for position interpolation."""
+        return f"Index {ind} has no {error_type}point with which to interpolate"
+
+    return _interpolate_spans_generic(
+        pos_df,
+        spans_to_interp,
+        get_boundary_values,
+        apply_interpolated_values,
+        validate_span,
+        get_error_context,
+    )
 
 
 def smooth_moving_avg(

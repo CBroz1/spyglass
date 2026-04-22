@@ -34,7 +34,7 @@ from spyglass.position.utils import (
 from spyglass.position.utils.tool_strategies import ToolStrategyFactory
 from spyglass.position.utils.yaml_io import load_yaml
 from spyglass.position.v2.video import VidFileGroup
-from spyglass.settings import dlc_project_dir
+from spyglass.settings import pose_project_dir
 from spyglass.utils import SpyglassMixin
 
 
@@ -57,9 +57,9 @@ class ModelMetadata:
 def resolve_model_path(stored_path: str) -> Path:
     """Resolve a stored model_path to an absolute Path.
 
-    Stored paths may be absolute or relative to ``dlc_project_dir``.
+    Stored paths may be absolute or relative to ``pose_project_dir``.
     Absolute paths are returned unchanged. Relative paths are resolved
-    against ``dlc_project_dir`` if it is configured, otherwise against
+    against ``pose_project_dir`` if it is configured, otherwise against
     the current working directory.
 
     Parameters
@@ -75,14 +75,14 @@ def resolve_model_path(stored_path: str) -> Path:
     p = Path(stored_path)
     if p.is_absolute():
         return p
-    base = dlc_project_dir or Path.cwd()
+    base = pose_project_dir or Path.cwd()
     return Path(base) / p
 
 
 def _to_stored_path(path: Path) -> str:
     """Convert an absolute model path to a stored (relative if possible) string.
 
-    If ``path`` falls under ``dlc_project_dir``, the relative portion is
+    If ``path`` falls under ``pose_project_dir``, the relative portion is
     returned so that entries remain portable across base-directory changes.
     Otherwise the absolute path is stored unchanged (same as V1 behavior).
 
@@ -96,9 +96,9 @@ def _to_stored_path(path: Path) -> str:
     str
         Path string to store in the database.
     """
-    if dlc_project_dir:
+    if pose_project_dir:
         try:
-            return str(path.relative_to(dlc_project_dir))
+            return str(path.relative_to(pose_project_dir))
         except ValueError:
             pass
     return str(path)

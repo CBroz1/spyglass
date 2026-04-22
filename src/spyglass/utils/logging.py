@@ -70,9 +70,43 @@ class SpyglassLogger(logging.Logger):
         log_func(msg)
 
 
-# Set custom logger class as default
-logging.setLoggerClass(SpyglassLogger)
-logger = logging.getLogger(__name__.split(".")[0])
+# Create dedicated Spyglass logger instance without global override
+logger = SpyglassLogger(__name__.split(".")[0])
+
+
+# Provide helper functions for easy access to logger methods
+def info_msg(msg: str) -> None:
+    """Log info message using Spyglass logger.
+
+    Parameters
+    ----------
+    msg : str
+        Message to log
+    """
+    logger.info_msg(msg)
+
+
+def warn_msg(msg: str) -> None:
+    """Log warning message using Spyglass logger.
+
+    Parameters
+    ----------
+    msg : str
+        Message to log
+    """
+    logger.warn_msg(msg)
+
+
+def error_msg(msg: str) -> None:
+    """Log error message using Spyglass logger.
+
+    Parameters
+    ----------
+    msg : str
+        Message to log
+    """
+    logger.error_msg(msg)
+
 
 log_level = dj.config.get("loglevel", "INFO").upper()
 

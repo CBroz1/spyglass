@@ -22,7 +22,12 @@ from spyglass.common.common_usage import ActivityLog
 
 # Import validation functions from utils module
 from spyglass.position.utils.validation import validate_list, validate_option
-from spyglass.settings import dlc_output_dir, dlc_video_dir, raw_dir, test_mode
+from spyglass.settings import (
+    pose_output_dir,
+    pose_video_dir,
+    raw_dir,
+    test_mode,
+)
 from spyglass.utils.logging import logger, stream_handler
 
 # validate_smooth_params functionality moved to utils.validation module
@@ -223,7 +228,7 @@ def infer_output_dir(key, makedir=True):
         )
 
     nwb_file_name = key["nwb_file_name"].split("_.")[0]
-    output_dir = Path(dlc_output_dir) / Path(
+    output_dir = Path(pose_output_dir) / Path(
         f"{nwb_file_name}/{nwb_file_name}_{key['epoch']:02}"
         f"_model_" + key["dlc_model_name"].replace(" ", "-")
     )
@@ -295,7 +300,7 @@ def get_video_info(key):
 
 def find_mp4(
     video_path: Union[str, PosixPath],
-    output_path: Union[str, PosixPath] = dlc_video_dir,
+    output_path: Union[str, PosixPath] = pose_video_dir,
     video_filename: str = None,
     video_filetype: str = "h264",
 ):

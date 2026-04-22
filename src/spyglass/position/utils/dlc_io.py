@@ -282,6 +282,85 @@ def validate_dlc_file(h5_path: Union[Path, str]) -> bool:
         return False
 
 
+def validate_dlc_output_structure(df: pd.DataFrame) -> None:
+    """Validate that DataFrame has proper DLC MultiIndex column structure.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame to validate
+
+    Raises
+    ------
+    ValueError
+        If DataFrame doesn't have expected MultiIndex structure
+    """
+    if not isinstance(df.columns, pd.MultiIndex) or df.columns.nlevels != 3:
+        raise ValueError(
+            f"Invalid DLC structure. Expected 3-level MultiIndex columns "
+            f"[scorer, bodypart, coords], got {df.columns.nlevels if hasattr(df.columns, 'nlevels') else 'non-MultiIndex'} levels."
+        )
+
+    # Validate column level names
+    expected_names = ["scorer", "bodypart", "coords"]
+    actual_names = list(df.columns.names)
+    if actual_names != expected_names:
+        raise ValueError(
+            f"Invalid column levels. Expected {expected_names}, "
+            f"got {actual_names}"
+        )
+
+
+def convert_dlc_to_position_df(
+    df: pd.DataFrame, likelihood_threshold: Optional[float] = None
+) -> pd.DataFrame:
+    """Convert DLC MultiIndex DataFrame to flat position DataFrame.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DLC DataFrame with MultiIndex [scorer, bodypart, coords]
+    likelihood_threshold : float, optional
+        If provided, set x/y to NaN where likelihood < threshold
+
+    Returns
+    -------
+    pd.DataFrame
+        Flattened DataFrame with columns like 'bodypart_x', 'bodypart_y', 'bodypart_likelihood'
+    """
+    # Validate input structure
+    validate_dlc_output_structure(df)
+
+    # Get metadata
+    scorer = df.columns.get_level_values(0)[0]
+    bodyparts = df.columns.get_level_values(1).unique().tolist()
+
+    # Build flat DataFrame
+    result_data = {}
+    for bodypart in bodyparts:
+        for coord in ["x", "y", "likelihood"]:
+            col = (scorer, bodypart, coord)
+            if col in df.columns:
+                column_name = f"{bodypart}_{coord}"
+                result_data[column_name] = df[col].copy()
+
+    result_df = pd.DataFrame(result_data, index=df.index)
+
+    # Apply likelihood threshold if provided
+    if likelihood_threshold is not None:
+        for bodypart in bodyparts:
+            likelihood_col = f"{bodypart}_likelihood"
+            if likelihood_col in result_df.columns:
+                # Set x,y to NaN where likelihood < threshold
+                low_conf_mask = result_df[likelihood_col] < likelihood_threshold
+                for coord in ["x", "y"]:
+                    coord_col = f"{bodypart}_{coord}"
+                    if coord_col in result_df.columns:
+                        result_df.loc[low_conf_mask, coord_col] = np.nan
+
+    return result_df
+
+
 # === DLC Utilities (Moved from utils_dlc.py) ===
 
 

@@ -25,7 +25,7 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
-from spyglass.utils import logger
+from spyglass.utils.logging import logger
 
 try:
     from position_tools.core import gaussian_smooth
@@ -259,44 +259,71 @@ def interp_orientation(
     - Interpolation is linear between bounding points
     - Input orientation should be unwrapped before calling
     """
-    idx = pd.IndexSlice
-    no_x_msg = "Index {ind} has no {x}point with which to interpolate"
-    df_orient = df["orientation"]
+    from spyglass.position.utils.interpolation import _interpolate_spans_generic
 
-    for ind, (span_start, span_stop) in enumerate(spans_to_interp):
+    # Handle boundary spans by explicitly setting them to NaN
+    for span_start, span_stop in spans_to_interp:
         span_times = df.index[span_start : span_stop + 1]
 
-        # Can't interpolate if span extends to end
-        if (span_stop + 1) >= len(df):
+        # Set NaN for spans at beginning or end (can't interpolate)
+        if span_start < 1 or (span_stop + 1) >= len(df):
             df.loc[span_times, "orientation"] = np.nan
-            logger.info_msg(no_x_msg.format(ind=ind, x="stop"))
-            continue
 
-        # Can't interpolate if span starts at beginning
-        if span_start < 1:
-            df.loc[span_times, "orientation"] = np.nan
-            logger.info_msg(no_x_msg.format(ind=ind, x="start"))
-            continue
+    # Filter out boundary spans for the consolidated interpolation
+    valid_spans = [
+        (start, stop)
+        for start, stop in spans_to_interp
+        if start >= 1 and (stop + 1) < len(df)
+    ]
 
-        # Get bounding orientation values and timestamps
-        orient = [df_orient.iloc[span_start - 1], df_orient.iloc[span_stop + 1]]
+    if not valid_spans:
+        return df
 
-        # Use timestamps BEFORE and AFTER the span for interpolation
-        time_before = df.index[span_start - 1]
-        time_after = df.index[span_stop + 1]
+    def get_boundary_values(df, span_start, span_stop):
+        """Extract orientation boundary values for interpolation."""
+        return {
+            "orientation": [
+                df["orientation"].iloc[span_start - 1],
+                df["orientation"].iloc[span_stop + 1],
+            ]
+        }
 
-        # Interpolate at the span timestamps
-        span_times = df.index[span_start : span_stop + 1]
-        orientnew = np.interp(
+    def apply_interpolated_values(
+        df,
+        span_start,
+        span_stop,
+        boundary_values,
+        span_times,
+        time_before,
+        time_after,
+        idx,
+    ):
+        """Apply interpolated orientation values to dataframe."""
+        # Interpolate orientation
+        orient_new = np.interp(
             x=span_times,
             xp=[time_before, time_after],
-            fp=[orient[0], orient[-1]],
-        )
-        df.loc[idx[span_times[0] : span_times[-1]], idx["orientation"]] = (
-            orientnew
+            fp=[
+                boundary_values["orientation"][0],
+                boundary_values["orientation"][1],
+            ],
         )
 
-    return df
+        # Apply interpolated values
+        df.loc[idx[span_times[0] : span_times[-1]], "orientation"] = orient_new
+
+    def get_error_context(ind, error_type):
+        """Generate error messages for orientation interpolation."""
+        return f"Index {ind} has no {error_type}point with which to interpolate"
+
+    return _interpolate_spans_generic(
+        df,
+        valid_spans,
+        get_boundary_values,
+        apply_interpolated_values,
+        None,
+        get_error_context,
+    )
 
 
 def smooth_orientation(

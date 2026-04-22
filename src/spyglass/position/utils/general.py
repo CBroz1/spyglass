@@ -14,11 +14,10 @@ from pathlib import Path, PosixPath
 from typing import Union
 
 import numpy as np
-
-from spyglass.common.common_behav import VideoFile
-from spyglass.settings import dlc_output_dir, dlc_video_dir, raw_dir
 import pandas as pd
 
+from spyglass.common.common_behav import VideoFile
+from spyglass.settings import pose_output_dir, pose_video_dir, raw_dir
 from spyglass.utils.logging import logger, stream_handler
 
 
@@ -202,7 +201,7 @@ def infer_output_dir(key, makedir=True):
         )
 
     nwb_file_name = key["nwb_file_name"].split("_.")[0]
-    output_dir = Path(dlc_output_dir) / Path(
+    output_dir = Path(pose_output_dir) / Path(
         f"{nwb_file_name}/{nwb_file_name}_{key['epoch']:02}"
         f"_model_" + key["dlc_model_name"].replace(" ", "-")
     )
@@ -266,7 +265,7 @@ def get_video_info(key):
 
 def find_mp4(
     video_path: Union[str, PosixPath],
-    output_path: Union[str, PosixPath] = dlc_video_dir,
+    output_path: Union[str, PosixPath] = pose_video_dir,
     video_filename: str = None,
     video_filetype: str = "h264",
 ):

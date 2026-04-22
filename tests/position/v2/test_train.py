@@ -35,20 +35,20 @@ class TestHelperFunctions:
     def test_resolve_model_path(self):
         """Test resolve_model_path function."""
         from spyglass.position.v2.train import resolve_model_path
-        from spyglass.settings import dlc_project_dir
+        from spyglass.settings import pose_project_dir
 
         # Test absolute path
         abs_path = "/absolute/path/to/model.pkl"
         resolved = resolve_model_path(abs_path)
         assert resolved == Path(abs_path)
 
-        # Test relative path behavior depends on dlc_project_dir setting
+        # Test relative path behavior depends on pose_project_dir setting
         rel_path = "relative/path/model.pkl"
         resolved = resolve_model_path(rel_path)
 
-        # If dlc_project_dir is configured, it uses that as base
-        if dlc_project_dir:
-            expected = Path(dlc_project_dir) / rel_path
+        # If pose_project_dir is configured, it uses that as base
+        if pose_project_dir:
+            expected = Path(pose_project_dir) / rel_path
         else:
             expected = Path.cwd() / rel_path
         assert resolved == expected
@@ -57,7 +57,7 @@ class TestHelperFunctions:
         """Test _to_stored_path function."""
         from spyglass.position.v2.train import _to_stored_path
 
-        # Test absolute path (no dlc_project_dir)
+        # Test absolute path (no pose_project_dir)
         abs_path = Path("/absolute/path/to/model.pkl")
         stored = _to_stored_path(abs_path)
         assert stored == str(abs_path)
@@ -234,7 +234,7 @@ class TestModelMake:
         stored = _to_stored_path(abs_path)
         assert stored == str(
             abs_path
-        )  # Should be absolute since no dlc_project_dir
+        )  # Should be absolute since no pose_project_dir
 
 
 class TestModelParams:

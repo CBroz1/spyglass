@@ -95,8 +95,6 @@ def validate_interpolation_params(validation_module):
 @pytest.fixture(scope="session")
 def mock_dlc_h5_file(tmp_path_factory):
     """Create a mock DLC H5 file for testing."""
-    import numpy as np
-    import pandas as pd
 
     tmp_path = tmp_path_factory.mktemp("dlc_h5_test")
     h5_path = tmp_path / "test_dlc_output.h5"
@@ -147,60 +145,13 @@ def get_dlc_scorer(dlc_io_module):
 @pytest.fixture(scope="session")
 def validate_dlc_output_structure(dlc_io_module):
     """Fixture for validate_dlc_output_structure function."""
-
-    # Create a validation function that checks DLC structure requirements
-    def validate_structure(df):
-        if not isinstance(df.columns, pd.MultiIndex) or df.columns.nlevels != 3:
-            raise ValueError(
-                f"Invalid DLC file structure. Expected 3-level MultiIndex columns "
-                f"[scorer, bodypart, coords], got {df.columns.nlevels} levels."
-            )
-
-        # Check level names
-        expected_names = ["scorer", "bodypart", "coords"]
-        actual_names = df.columns.names
-        if actual_names != expected_names:
-            raise ValueError(
-                f"Invalid column levels. Expected {expected_names}, "
-                f"got {actual_names}"
-            )
-        return True
-
-    yield validate_structure
+    yield dlc_io_module.validate_dlc_output_structure
 
 
 @pytest.fixture(scope="session")
 def convert_dlc_to_position_df(dlc_io_module):
     """Fixture for convert_dlc_to_position_df function."""
-
-    # Create a simple conversion function since the original doesn't exist
-    def convert_to_position(df, likelihood_threshold=0.0):
-        scorer = df.columns.get_level_values(0)[0]
-        bodyparts = df.columns.get_level_values(1).unique().tolist()
-
-        result_data = {}
-        for bodypart in bodyparts:
-            for coord in ["x", "y", "likelihood"]:
-                col_name = f"{bodypart}_{coord}"
-                dlc_col = (scorer, bodypart, coord)
-
-                if dlc_col in df.columns:
-                    data = df[dlc_col].values.copy()
-
-                    # Apply likelihood threshold for x and y coordinates
-                    if coord in ["x", "y"] and likelihood_threshold > 0.0:
-                        likelihood_col = (scorer, bodypart, "likelihood")
-                        if likelihood_col in df.columns:
-                            low_likelihood = (
-                                df[likelihood_col] < likelihood_threshold
-                            )
-                            data[low_likelihood] = np.nan
-
-                    result_data[col_name] = data
-
-        return pd.DataFrame(result_data, index=df.index)
-
-    yield convert_to_position
+    yield dlc_io_module.convert_dlc_to_position_df
 
 
 @pytest.fixture(scope="session")

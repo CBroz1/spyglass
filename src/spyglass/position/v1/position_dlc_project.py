@@ -12,7 +12,7 @@ from spyglass.common.common_lab import LabTeam
 from spyglass.position.utils import sanitize_filename, test_mode_suppress
 from spyglass.position.utils.dlc_io import parse_dlc_h5_output
 from spyglass.position.utils.general import find_mp4, get_video_info
-from spyglass.settings import dlc_project_dir, dlc_video_dir
+from spyglass.settings import pose_project_dir, pose_video_dir
 from spyglass.utils import SpyglassMixin, logger
 from spyglass.utils.dj_helper_fn import sanitize_unix_name
 
@@ -176,7 +176,7 @@ class DLCProject(SpyglassMixin, dj.Manual):
 
         config_path = Path(config_path)
         project_path = config_path.parent
-        dlc_project_path = dlc_project_dir
+        dlc_project_path = pose_project_dir
 
         if dlc_project_path not in project_path.as_posix():
             project_dirname = project_path.name
@@ -227,8 +227,8 @@ class DLCProject(SpyglassMixin, dj.Manual):
         frames_per_video: int,
         video_list: List,
         groupname: str = None,
-        project_directory: str = dlc_project_dir,
-        output_path: str = dlc_video_dir,
+        project_directory: str = pose_project_dir,
+        output_path: str = pose_video_dir,
         **kwargs,
     ):
         """Insert a new project into DLCProject table.
@@ -352,7 +352,7 @@ class DLCProject(SpyglassMixin, dj.Manual):
         video_list,
         config_path=None,
         key=None,
-        output_path: str = dlc_video_dir,
+        output_path: str = pose_video_dir,
         add_new=False,
         add_to_files=True,
         **kwargs,

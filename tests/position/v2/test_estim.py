@@ -285,7 +285,7 @@ class TestPoseEstimSelectionMethods:
         key = {"model_id": "test_model", "vid_group_id": "test_vid"}
 
         with (
-            patch("spyglass.position.v2.estim.dlc_output_dir", None),
+            patch("spyglass.position.v2.estim.pose_output_dir", None),
             patch("pathlib.Path.mkdir") as mock_mkdir,
         ):
             result = selection._infer_output_dir(key)
@@ -295,12 +295,12 @@ class TestPoseEstimSelectionMethods:
             assert "test_vid" in result
 
     def test_infer_output_dir_with_configured_dir(self, PoseEstimSelection):
-        """Test _infer_output_dir with configured dlc_output_dir."""
+        """Test _infer_output_dir with configured pose_output_dir."""
         selection = PoseEstimSelection()
         key = {"model_id": "model123", "vid_group_id": "vid456"}
 
         with (
-            patch("spyglass.position.v2.estim.dlc_output_dir", "/custom/path"),
+            patch("spyglass.position.v2.estim.pose_output_dir", "/custom/path"),
             patch("pathlib.Path.mkdir") as mock_mkdir,
         ):
             result = selection._infer_output_dir(key)
@@ -315,7 +315,7 @@ class TestPoseEstimSelectionMethods:
         key = {}  # Empty key
 
         with (
-            patch("spyglass.position.v2.estim.dlc_output_dir", None),
+            patch("spyglass.position.v2.estim.pose_output_dir", None),
             patch("pathlib.Path.mkdir") as mock_mkdir,
         ):
             result = selection._infer_output_dir(key)

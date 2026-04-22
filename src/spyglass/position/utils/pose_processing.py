@@ -45,9 +45,11 @@ def apply_likelihood_threshold(
             try:
                 if pose_df.columns.nlevels == 3:
                     likelihood = pose_df.loc[:, idx[:, bodypart, "likelihood"]]
+                    if isinstance(likelihood, pd.DataFrame):
+                        likelihood = likelihood.min(axis=1)
                 else:
                     likelihood = pose_df.loc[:, idx[bodypart, "likelihood"]]
-                low = likelihood.values.flatten() < likelihood_thresh
+                low = likelihood < likelihood_thresh
                 if pose_df.columns.nlevels == 3:
                     pose_df.loc[low, idx[:, bodypart, ["x", "y"]]] = np.nan
                 else:
