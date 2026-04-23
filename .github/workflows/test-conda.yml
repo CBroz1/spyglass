@@ -141,11 +141,11 @@ jobs:
             echo "description=Full suite (manual)" >> $GITHUB_OUTPUT
           fi
         else
-          # PR events - include position tests for better coverage
+          # PR events - fast tests but include position for coverage
           # (synchronize, opened, etc.)
           echo "mode=pr" >> $GITHUB_OUTPUT
-          echo "marker_args=-m 'not very_slow'" >> $GITHUB_OUTPUT
-          echo "description=PR test suite with coverage focus" >> $GITHUB_OUTPUT
+          echo "marker_args=-m 'not slow and not very_slow'" >> $GITHUB_OUTPUT
+          echo "description=PR test suite with position coverage" >> $GITHUB_OUTPUT
         fi
     - name: Run tests (${{ steps.test_mode.outputs.description }})
       run: |

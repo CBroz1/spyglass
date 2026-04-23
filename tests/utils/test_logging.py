@@ -84,8 +84,7 @@ def test_error_msg_uses_error_outside_test_mode(spyglass_logger):
 
 
 def test_module_info_msg_delegates():
-    from spyglass.utils.logging import info_msg
-    from spyglass.utils.logging import logger
+    from spyglass.utils.logging import info_msg, logger
 
     with patch.object(logger, "info_msg") as mock:
         info_msg("test")
@@ -93,8 +92,7 @@ def test_module_info_msg_delegates():
 
 
 def test_module_warn_msg_delegates():
-    from spyglass.utils.logging import warn_msg
-    from spyglass.utils.logging import logger
+    from spyglass.utils.logging import logger, warn_msg
 
     with patch.object(logger, "warn_msg") as mock:
         warn_msg("test")
@@ -102,8 +100,7 @@ def test_module_warn_msg_delegates():
 
 
 def test_module_error_msg_delegates():
-    from spyglass.utils.logging import error_msg
-    from spyglass.utils.logging import logger
+    from spyglass.utils.logging import error_msg, logger
 
     with patch.object(logger, "error_msg") as mock:
         error_msg("test")
@@ -112,8 +109,9 @@ def test_module_error_msg_delegates():
 
 def test_excepthook_keyboard_interrupt_uses_system_handler(excepthook):
     """Test that KeyboardInterrupt uses the system exception handler."""
+    exc_instance = KeyboardInterrupt("test")
     with patch.object(sys, "__excepthook__") as mock_sys_excepthook:
-        excepthook(KeyboardInterrupt, KeyboardInterrupt("test"), None)
+        excepthook(KeyboardInterrupt, exc_instance, None)
     mock_sys_excepthook.assert_called_once_with(
-        KeyboardInterrupt, KeyboardInterrupt("test"), None
+        KeyboardInterrupt, exc_instance, None
     )
