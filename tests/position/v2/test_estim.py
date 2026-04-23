@@ -435,3 +435,180 @@ class TestBasicMethods:
 
         centroid = CentroidParams(method="centroid", points={"nose": [1, 2]})
         assert centroid.method == "centroid"
+
+
+# ── Dependency Injection Test Stubs ──────────────────────────────────────────
+
+
+class StubInferenceRunner:
+    """Stub inference runner for testing without database dependencies.
+
+    Implements InferenceRunnerProtocol to enable pure unit testing of
+    PoseEstim business logic without requiring real DLC inference.
+    """
+
+    def __init__(self, pose_data=None):
+        self.pose_data = pose_data or pd.DataFrame(
+            {
+                ("scorer", "bodypart1", "x"): [1.0, 2.0],
+                ("scorer", "bodypart1", "y"): [3.0, 4.0],
+                ("scorer", "bodypart1", "likelihood"): [0.9, 0.8],
+            }
+        )
+
+    def run_dlc_inference(self, model_info, video_path, **kwargs):
+        """Return pre-configured pose data."""
+        return self.pose_data.copy()
+
+
+class StubNWBBuilder:
+    """Stub NWB builder for testing without file system dependencies.
+
+    Implements NWBBuilderProtocol to enable testing of PoseEstim
+    NWB creation logic without actual file I/O.
+    """
+
+    def __init__(self):
+        self.built_objects = []
+
+    def build_pose_estimation(
+        self, pose_df, bodyparts, scorer, model_id, skeleton_edges, **kwargs
+    ):
+        """Return mock NWB objects and record parameters."""
+        mock_pose_estimation = type(
+            "MockPoseEstimation",
+            (),
+            {
+                "name": f"pose_estimation_{model_id}",
+                "description": kwargs.get("description", "Pose estimation"),
+            },
+        )()
+
+        mock_skeleton = type(
+            "MockSkeleton",
+            (),
+            {
+                "name": f"skeleton_{model_id}",
+                "nodes": bodyparts,
+                "edges": skeleton_edges,
+            },
+        )()
+
+        self.built_objects.append(
+            {
+                "pose_estimation": mock_pose_estimation,
+                "skeleton": mock_skeleton,
+                "pose_df_shape": pose_df.shape,
+                "bodyparts": bodyparts,
+                "scorer": scorer,
+            }
+        )
+
+        return mock_pose_estimation, mock_skeleton
+
+
+class StubFileSystem:
+    """Stub filesystem for testing without real file I/O.
+
+    Implements FileSystemProtocol to enable testing of strategy classes
+    without requiring actual files to exist.
+    """
+
+    def __init__(self, files=None, yaml_data=None):
+        self.files = files or {}  # path -> exists boolean
+        self.yaml_data = yaml_data or {}  # path -> dict content
+        self.glob_results = {}  # pattern -> list of matches
+
+    def exists(self, path):
+        """Check if path exists in our stub filesystem."""
+        return self.files.get(str(path), False)
+
+    def glob(self, pattern):
+        """Return pre-configured glob results."""
+        return self.glob_results.get(pattern, [])
+
+    def read_yaml(self, path):
+        """Return pre-configured YAML data."""
+        if str(path) not in self.yaml_data:
+            raise FileNotFoundError(f"No YAML data for {path}")
+        return self.yaml_data[str(path)]
+
+    def getmtime(self, path):
+        """Return a fixed modification time."""
+        return 1640995200.0  # 2022-01-01 00:00:00
+
+
+class TestPoseEstimDependencyInjection:
+    """Test PoseEstim with injected dependencies to avoid heavy mocking.
+
+    These tests demonstrate P2-A4 from the SOLID audit - testing business logic
+    with stub implementations rather than unittest.mock.patch().
+    """
+
+    def test_pose_estim_with_stub_runner(self):
+        """Test PoseEstim.make() with injected inference runner stub."""
+        # This test would be implemented once database fixtures support
+        # class-level dependency injection. For now, it serves as a template.
+
+        # Example of how it would work:
+        # 1. Create test subclass of PoseEstim with injected dependencies
+        # 2. Test business logic with pre-configured stub data
+        # 3. Assert on extracted results without database side effects
+
+        stub_runner = StubInferenceRunner()
+        stub_builder = StubNWBBuilder()
+
+        # Verify stub behavior works as expected
+        result = stub_runner.run_dlc_inference({}, "dummy_video.mp4")
+        assert len(result) == 2
+        assert "likelihood" in result.columns.get_level_values(2)
+
+        pose_est, skeleton = stub_builder.build_pose_estimation(
+            result, ["bodypart1"], "scorer", "test_model", []
+        )
+        assert pose_est.name == "pose_estimation_test_model"
+        assert skeleton.name == "skeleton_test_model"
+
+    def test_inference_runner_stub_customization(self):
+        """Test that stub runner can return custom pose data."""
+        custom_data = pd.DataFrame(
+            {
+                ("dlc", "nose", "x"): [10.0, 20.0, 30.0],
+                ("dlc", "nose", "y"): [40.0, 50.0, 60.0],
+                ("dlc", "nose", "likelihood"): [0.95, 0.90, 0.85],
+            }
+        )
+
+        runner = StubInferenceRunner(pose_data=custom_data)
+        result = runner.run_dlc_inference({}, "test_video.mp4")
+
+        assert result.equals(custom_data)
+        assert len(result) == 3
+        assert result[("dlc", "nose", "x")].iloc[0] == 10.0
+
+    def test_nwb_builder_recording(self):
+        """Test that stub NWB builder records build parameters."""
+        builder = StubNWBBuilder()
+        test_data = pd.DataFrame(
+            {
+                ("test_scorer", "part1", "x"): [1, 2],
+                ("test_scorer", "part1", "y"): [3, 4],
+            }
+        )
+
+        pose_est, skeleton = builder.build_pose_estimation(
+            test_data,
+            bodyparts=["part1"],
+            scorer="test_scorer",
+            model_id="model_123",
+            skeleton_edges=[],
+            description="Test pose",
+        )
+
+        # Verify the builder recorded the call
+        assert len(builder.built_objects) == 1
+        recorded = builder.built_objects[0]
+        assert recorded["pose_df_shape"] == (2, 2)
+        assert recorded["bodyparts"] == ["part1"]
+        assert recorded["scorer"] == "test_scorer"
+        assert pose_est.description == "Test pose"

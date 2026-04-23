@@ -35,6 +35,21 @@ class PoseToolStrategy(ABC):
     def tool_name(self) -> str:
         """Name of the pose estimation tool."""
 
+    @property
+    @abstractmethod
+    def supports_training(self) -> bool:
+        """Whether this tool supports model training.
+
+        Used to avoid Liskov substitution principle violations where
+        callers would need to check the specific strategy type to know
+        if training methods are available.
+
+        Returns
+        -------
+        bool
+            True if train_model, evaluate_model, verify_model are functional.
+        """
+
     @abstractmethod
     def get_required_params(self) -> Set[str]:
         """Get parameters required for training with this tool."""
@@ -313,6 +328,10 @@ class DLCStrategy(PoseToolStrategy):
     @property
     def tool_name(self) -> str:
         return "DLC"
+
+    @property
+    def supports_training(self) -> bool:
+        return True
 
     def get_required_params(self) -> Set[str]:
         return {"project_path"}  # project_path required for DLC training
@@ -897,7 +916,6 @@ class DLCStrategy(PoseToolStrategy):
         self, config: dict, model_instance
     ) -> tuple[Path, str]:
         """Localize the trained model and generate model ID."""
-        import os
         from datetime import datetime
 
         from deeplabcut.utils import get_model_folder
@@ -939,7 +957,7 @@ class DLCStrategy(PoseToolStrategy):
             latest_snapshot = 0
             max_modified_time = 0
             for snapshot in snapshots:
-                modified_time = os.path.getmtime(snapshot)
+                modified_time = self._fs.getmtime(snapshot)
                 if modified_time > max_modified_time:
                     # Extract snapshot number from filename (skip "snapshot-" prefix)
                     latest_snapshot = int(snapshot.stem[9:])
@@ -965,6 +983,10 @@ class SLEAPStrategy(PoseToolStrategy):
     @property
     def tool_name(self) -> str:
         return "SLEAP"
+
+    @property
+    def supports_training(self) -> bool:
+        return False  # SLEAP training not yet implemented
 
     def get_required_params(self) -> Set[str]:
         return {
@@ -1132,6 +1154,10 @@ class NDXPoseStrategy(PoseToolStrategy):
     @property
     def tool_name(self) -> str:
         return "ndx-pose"
+
+    @property
+    def supports_training(self) -> bool:
+        return False  # NDX-Pose is for importing existing models only
 
     def get_required_params(self) -> Set[str]:
         return {"nwb_file", "model_name"}  # Required for NDX-Pose import

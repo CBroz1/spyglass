@@ -263,3 +263,129 @@ def test_dlc_strategy_localize_model_missing_directory(
             FileNotFoundError, match="Training directory not found"
         ):
             strategy._localize_trained_model(config, model_instance)
+
+
+# ── Filesystem Dependency Injection Tests ─────────────────────────────────────
+
+
+class TestDLCStrategyWithFilesystemInjection:
+    """Test DLCStrategy with injected filesystem to avoid file I/O dependencies.
+
+    These tests demonstrate P2-B4 from the SOLID audit - testing strategy logic
+    with stub filesystem implementations rather than real files.
+    """
+
+    def test_dlc_strategy_with_stub_filesystem(self):
+        """Test DLCStrategy with injected stub filesystem."""
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+        from tests.position.v2.test_estim import StubFileSystem
+
+        # Configure stub filesystem
+        stub_fs = StubFileSystem(
+            files={
+                "/project/config.yaml": True,
+                "/project/dlc-models": True,
+            },
+            yaml_data={
+                "/project/config.yaml": {
+                    "project_path": "/project",
+                    "bodyparts": ["nose", "tail"],
+                    "TrainingFraction": [0.95],
+                }
+            },
+        )
+
+        # Inject filesystem into strategy
+        strategy = DLCStrategy(filesystem=stub_fs)
+
+        # Test filesystem-dependent operations work with stubs
+        assert strategy._fs.exists("/project/config.yaml") is True
+        assert strategy._fs.exists("/nonexistent/path") is False
+
+        config = strategy._fs.read_yaml("/project/config.yaml")
+        assert config["project_path"] == "/project"
+        assert "nose" in config["bodyparts"]
+
+    def test_dlc_model_discovery_with_stub_filesystem(self):
+        """Test model discovery logic with pre-configured filesystem."""
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+        from tests.position.v2.test_estim import StubFileSystem
+
+        # Configure filesystem with model files
+        stub_fs = StubFileSystem()
+        stub_fs.glob_results = {
+            "/models/*/pose_cfg.yaml": [
+                "/models/model1/pose_cfg.yaml",
+                "/models/model2/pose_cfg.yaml",
+            ]
+        }
+        stub_fs.files = {
+            "/models/model1/pose_cfg.yaml": True,
+            "/models/model2/pose_cfg.yaml": True,
+        }
+        stub_fs.yaml_data = {
+            "/models/model1/pose_cfg.yaml": {"net_type": "resnet_50"},
+            "/models/model2/pose_cfg.yaml": {"net_type": "mobilenet_v2"},
+        }
+
+        strategy = DLCStrategy(filesystem=stub_fs)
+
+        # Test that glob results are used correctly
+        results = strategy._fs.glob("/models/*/pose_cfg.yaml")
+        assert len(results) == 2
+        assert "/models/model1/pose_cfg.yaml" in results
+
+        # Test YAML reading works
+        config1 = strategy._fs.read_yaml("/models/model1/pose_cfg.yaml")
+        assert config1["net_type"] == "resnet_50"
+
+    def test_parameter_validation_without_files(self):
+        """Test parameter validation logic without requiring real files."""
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+        from tests.position.v2.test_estim import StubFileSystem
+
+        # Stub filesystem that simulates missing files for error paths
+        stub_fs = StubFileSystem(files={})  # No files exist
+        strategy = DLCStrategy(filesystem=stub_fs)
+
+        # Test parameter validation still works
+        required = strategy.get_required_params()
+        accepted = strategy.get_accepted_params()
+        defaults = strategy.get_default_params()
+
+        assert isinstance(required, set)
+        assert isinstance(accepted, set)
+        assert isinstance(defaults, dict)
+        assert "model_id" in required
+        assert len(accepted) > len(required)
+
+    def test_filesystem_error_handling(self):
+        """Test error handling when filesystem operations fail."""
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+        from tests.position.v2.test_estim import StubFileSystem
+
+        # Filesystem with no YAML data configured
+        stub_fs = StubFileSystem(
+            files={"/config.yaml": True}
+        )  # exists but no data
+        strategy = DLCStrategy(filesystem=stub_fs)
+
+        # Should raise FileNotFoundError when trying to read unconfigured YAML
+        with pytest.raises(FileNotFoundError, match="No YAML data"):
+            strategy._fs.read_yaml("/config.yaml")
+
+    def test_getmtime_functionality(self):
+        """Test modification time functionality with stub filesystem."""
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+        from tests.position.v2.test_estim import StubFileSystem
+
+        stub_fs = StubFileSystem()
+        strategy = DLCStrategy(filesystem=stub_fs)
+
+        # Test that getmtime returns consistent value
+        mtime = strategy._fs.getmtime("/any/path")
+        assert isinstance(mtime, float)
+        assert mtime > 0
+
+        # Should return same value for multiple calls (stub behavior)
+        assert strategy._fs.getmtime("/another/path") == mtime

@@ -1254,6 +1254,13 @@ class Model(SpyglassMixin, dj.Computed):
         # Dispatch to tool-specific training method using strategy pattern
         strategy = ToolStrategyFactory.create_strategy(tool)
 
+        # Early validation using supports_training for better error messages
+        if not strategy.supports_training:
+            raise NotImplementedError(
+                f"Training not supported for {tool}. "
+                f"Use a different tool that supports training."
+            )
+
         try:
             model_result = strategy.train_model(
                 key, params, skeleton_id, vid_group, sel_entry, self
@@ -1604,6 +1611,15 @@ class Model(SpyglassMixin, dj.Computed):
 
         # Use strategy pattern for tool-specific evaluation
         strategy = ToolStrategyFactory.create_strategy(tool)
+
+        # Early validation using supports_training for better error messages
+        if not strategy.supports_training:
+            self._warn_msg(
+                f"Evaluation not supported for {tool}. "
+                "Evaluation is only available for tools that support training."
+            )
+            return None
+
         results = strategy.evaluate_model(
             model_entry, params_entry, self, plotting, show_errors, **kwargs
         )
@@ -2639,11 +2655,19 @@ class Model(SpyglassMixin, dj.Computed):
             tool = model_entry["tool"]
             try:
                 strategy = ToolStrategyFactory.create_strategy(tool)
-                tool_checks, tool_warnings = strategy.verify_model(
-                    model_path, check_inference=True
-                )
-                checks.update(tool_checks)
-                warnings.extend(tool_warnings)
+
+                # Only run verification if the tool supports training
+                if strategy.supports_training:
+                    tool_checks, tool_warnings = strategy.verify_model(
+                        model_path, check_inference=True
+                    )
+                    checks.update(tool_checks)
+                    warnings.extend(tool_warnings)
+                else:
+                    warnings.append(
+                        f"Model verification not supported for tool: {tool} "
+                        "(tool does not support training)"
+                    )
             except ValueError:
                 warnings.append(
                     f"Inference check not supported for tool: {tool}"

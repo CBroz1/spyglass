@@ -185,6 +185,21 @@ class FileSystemProtocol(Protocol):
         """
         ...
 
+    def getmtime(self, path: Union[str, Path]) -> float:
+        """Get the modification time of a file.
+
+        Parameters
+        ----------
+        path : Union[str, Path]
+            Path to the file
+
+        Returns
+        -------
+        float
+            Modification time as timestamp
+        """
+        ...
+
 
 class RealFileSystem:
     """Real filesystem implementation of FileSystemProtocol.
@@ -209,6 +224,10 @@ class RealFileSystem:
     def exists(self, path: Union[str, Path]) -> bool:
         """Check if a path exists."""
         return Path(path).exists()
+
+    def getmtime(self, path: Union[str, Path]) -> float:
+        """Get the modification time of a file."""
+        return Path(path).stat().st_mtime
 
 
 class RealNWBReader:
