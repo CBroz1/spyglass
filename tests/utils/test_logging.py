@@ -108,3 +108,12 @@ def test_module_error_msg_delegates():
     with patch.object(logger, "error_msg") as mock:
         error_msg("test")
     mock.assert_called_once_with("test")
+
+
+def test_excepthook_keyboard_interrupt_uses_system_handler(excepthook):
+    """Test that KeyboardInterrupt uses the system exception handler."""
+    with patch.object(sys, "__excepthook__") as mock_sys_excepthook:
+        excepthook(KeyboardInterrupt, KeyboardInterrupt("test"), None)
+    mock_sys_excepthook.assert_called_once_with(
+        KeyboardInterrupt, KeyboardInterrupt("test"), None
+    )
