@@ -356,7 +356,9 @@ class TestDLCStrategyWithFilesystemInjection:
         assert isinstance(required, set)
         assert isinstance(accepted, set)
         assert isinstance(defaults, dict)
-        assert "model_id" in required
+        assert (
+            "project_path" in required
+        )  # DLC requires project_path, not model_id
         assert len(accepted) > len(required)
 
     def test_filesystem_error_handling(self):

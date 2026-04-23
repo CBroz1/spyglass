@@ -200,6 +200,10 @@ class TestToolStrategyFactory:
             def tool_name(self) -> str:
                 return "test"
 
+            @property
+            def supports_training(self) -> bool:
+                return True
+
             def get_required_params(self) -> Set[str]:
                 return {"test_param"}
 

@@ -448,13 +448,16 @@ class StubInferenceRunner:
     """
 
     def __init__(self, pose_data=None):
-        self.pose_data = pose_data or pd.DataFrame(
-            {
-                ("scorer", "bodypart1", "x"): [1.0, 2.0],
-                ("scorer", "bodypart1", "y"): [3.0, 4.0],
-                ("scorer", "bodypart1", "likelihood"): [0.9, 0.8],
-            }
-        )
+        if pose_data is None:
+            self.pose_data = pd.DataFrame(
+                {
+                    ("scorer", "bodypart1", "x"): [1.0, 2.0],
+                    ("scorer", "bodypart1", "y"): [3.0, 4.0],
+                    ("scorer", "bodypart1", "likelihood"): [0.9, 0.8],
+                }
+            )
+        else:
+            self.pose_data = pose_data
 
     def run_dlc_inference(self, model_info, video_path, **kwargs):
         """Return pre-configured pose data."""
