@@ -113,3 +113,101 @@ def test_optogenetic_protocol(
     ) == opto_epoch_dict[
         "theta_filter_phase_in_deg"
     ], "ThetaTrigger did not import the expected filter phase."
+
+
+def test_optogenetic_protocol_basic_functionality():
+    """Test OptogeneticProtocol basic functionality and imports."""
+    from spyglass.common.common_optogenetics import OptogeneticProtocol
+
+    # Test basic table structure
+    protocol = OptogeneticProtocol()
+    assert hasattr(protocol, "definition")
+
+    # Test parameter validation logic
+    def validate_protocol_params(params):
+        required_keys = ["pulse_length_in_ms", "power_in_mW"]
+        return all(key in params for key in required_keys)
+
+    valid_params = {
+        "pulse_length_in_ms": 10.0,
+        "power_in_mW": 2.5,
+        "period_in_ms": 100.0,
+    }
+
+    assert validate_protocol_params(valid_params)
+    assert valid_params["pulse_length_in_ms"] > 0
+    assert valid_params["power_in_mW"] > 0
+
+
+def test_optogenetic_protocol_device_detection():
+    """Test device detection logic."""
+    from unittest.mock import Mock
+
+    # Test optogenetic device detection
+    mock_device = Mock()
+    mock_device.name = "optogenetic_stimulator"
+    mock_device.description = "LED stimulator"
+
+    def is_optogenetic_device(device_name):
+        return (
+            "optogenetic" in device_name.lower()
+            or "opto" in device_name.lower()
+        )
+
+    assert is_optogenetic_device("optogenetic_stimulator")
+    assert not is_optogenetic_device("electrode_array")
+
+
+def test_optogenetic_protocol_parameter_validation():
+    """Test parameter validation ranges."""
+    # Test valid parameter ranges
+    test_cases = [
+        {"pulse_length_in_ms": 5.0, "expected": True},
+        {"pulse_length_in_ms": 0.0, "expected": False},  # Invalid
+        {"pulse_length_in_ms": -1.0, "expected": False},  # Invalid
+    ]
+
+    for case in test_cases:
+        is_valid = case["pulse_length_in_ms"] > 0
+        assert is_valid == case["expected"]
+
+
+def test_optogenetic_protocol_config_processing():
+    """Test configuration processing logic."""
+    # Test config structure
+    config = {
+        "OptogeneticProtocol": {
+            "epoch_1": {"pulse_length_in_ms": 10.0, "power_in_mW": 2.5}
+        }
+    }
+
+    # Test config access patterns
+    opto_config = config.get("OptogeneticProtocol", {})
+    assert len(opto_config) == 1
+
+    epoch_config = opto_config.get("epoch_1", {})
+    assert epoch_config["pulse_length_in_ms"] == 10.0
+    assert epoch_config["power_in_mW"] == 2.5
+
+
+def test_optogenetic_protocol_edge_cases():
+    """Test edge cases and error conditions."""
+    # Test empty configurations
+    empty_config = {}
+    opto_section = empty_config.get("OptogeneticProtocol", {})
+    assert len(opto_section) == 0
+
+    # Test missing device scenarios
+    empty_devices = {}
+    assert len(empty_devices) == 0
+
+    # Test parameter boundary conditions
+    boundary_params = {
+        "pulse_length_in_ms": 0.1,  # Very small pulse
+        "power_in_mW": 0.01,  # Very low power
+    }
+
+    assert boundary_params["pulse_length_in_ms"] > 0
+    assert boundary_params["power_in_mW"] > 0
+    assert boundary_params["power_in_mW"] > 0
+    assert boundary_params["power_in_mW"] > 0

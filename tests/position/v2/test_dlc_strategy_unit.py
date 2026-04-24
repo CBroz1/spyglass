@@ -161,7 +161,7 @@ def test_dlc_strategy_localize_model(pv2_train, tmp_path, skip_if_no_dlc):
         snapshot2.touch()
 
         # Mock file modification times (snapshot2 is newer)
-        with patch("os.path.getmtime") as mock_getmtime:
+        with patch.object(strategy._fs, "getmtime") as mock_getmtime:
             mock_getmtime.side_effect = lambda p: {
                 str(snapshot1): 1000,
                 str(snapshot2): 2000,  # More recent
