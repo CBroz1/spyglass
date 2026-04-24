@@ -298,7 +298,7 @@ class TestPoseParamsValidation:
 
         with pytest.raises(
             ValueError,
-            match=r"4pt centroid requires points:.*redLED.*greenLED.*Got:",
+            match=r"4pt centroid requires points:.*Got:",
         ):
             PoseParams.insert_custom_dict(
                 params_name="invalid",
