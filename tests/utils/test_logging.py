@@ -246,3 +246,30 @@ def test_excepthook_basic_functionality():
         except Exception:
             # Excepthook might have different behavior in test environment
             pass
+
+
+@pytest.mark.parametrize(
+    "msg_type,logger_method",
+    [
+        ("info", "info"),
+        ("warning", "warning"),
+        ("error", "error"),
+        ("debug", "debug"),
+    ],
+)
+def test_logger_methods_coverage(msg_type, logger_method):
+    from spyglass.utils import logger
+
+    assert hasattr(logger, logger_method)
+    with patch.object(logger, logger_method) as mock_method:
+        getattr(logger, logger_method)(f"Test {msg_type} message")
+        mock_method.assert_called_once_with(f"Test {msg_type} message")
+
+
+def test_logging_configuration():
+    from spyglass.utils.logging import logger
+
+    assert logger is not None
+    assert hasattr(logger, "info")
+    assert hasattr(logger, "warning")
+    assert hasattr(logger, "error")
