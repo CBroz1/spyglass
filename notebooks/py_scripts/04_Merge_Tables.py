@@ -73,7 +73,7 @@ from spyglass.lfp.lfp_merge import LFPOutput  # Merge Table
 #
 
 # %% [markdown]
-# Check to make sure the data inserted in the previour notebook is still there.
+# Check to make sure the data inserted in the previous notebook is still there.
 #
 
 # %%
@@ -295,7 +295,7 @@ result5.full_table_name
 (LFPOutput & nwb_file_dict).delete()
 
 # %% [markdown]
-# This function is run automatically whin you use `cautious_delete`, which
+# This function is run automatically when you use `cautious_delete`, which
 # checks team permissions before deleting.
 #
 

@@ -226,7 +226,7 @@ class Merge(ExportMixin, dj.Manual):
         if attrs and all(
             a in self._MASTER_ONLY_ATTRS | self._DJ_SPECIAL_ATTRS for a in attrs
         ):
-            return super().fetch1(*attrs, **kwargs)
+            return super().fetch1(*attrs, log_export=log_export, **kwargs)
 
         n = len(self)
         if n != 1:
@@ -619,7 +619,7 @@ class Merge(ExportMixin, dj.Manual):
                 )
             raise ValueError(
                 f"Found {len(sources)} potential parts: {sources}\n\t"
-                + "Try adding a restriction before invoking `get_part`.\n\t"
+                + "Try adding a restriction before invoking `get_part_table`.\n\t"
                 + "Or permitting multiple sources with `multi_source=True`."
             )
         if len(sources) == 0:
@@ -657,9 +657,9 @@ class Merge(ExportMixin, dj.Manual):
 
         if not multi_source and len(part_parents) != 1:
             raise ValueError(
-                f"Found  {len(part_parents)} potential parents: {part_parents}"
+                f"Found {len(part_parents)} potential parents: {part_parents}"
                 + "\n\tTry adding a string restriction when invoking "
-                + "`get_parent`. Or permitting multiple sources with "
+                + "`get_parent_table()`. Or permitting multiple sources with "
                 + "`multi_source=True`."
             )
 
@@ -1247,7 +1247,7 @@ class Merge(ExportMixin, dj.Manual):
 
     def super_view(self):
         """Show master-only preview (no part-walking)."""
-        return super()
+        return super().__repr__()
 
     def _repr_html_(self):
         """HTML repr for notebooks, showing merged view as HTML string."""
@@ -1388,7 +1388,7 @@ def delete_downstream_merge(
 
     ActivityLog().deprecate_log(
         name="delete_downstream_merge",
-        alternate="Table.delete",
+        alt="Table.delete",
     )
 
     if not isinstance(table, SpyglassMixin):
