@@ -1,5 +1,3 @@
-# pylint: disable=protected-access
-
 from unittest.mock import patch
 
 import numpy as np
@@ -68,7 +66,7 @@ def test_plot_intervals(interval_list, mini_dict, start_time=0):
     ), "plot_intervals failed: plotted interval times do not match"
 
 
-def test_plot_epoch(interval_list):
+def test_plot_epoch(mini_insert, interval_list):
     restr_interval = interval_list & "interval_list_name like 'raw%'"
     fig = restr_interval.plot_epoch_pos_raw_intervals(return_fig=True)
     epoch_label = fig.get_axes()[0].get_yticklabels()[-1].get_text()
