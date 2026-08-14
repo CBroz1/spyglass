@@ -28,6 +28,7 @@ dependencies:
   - ipympl
   - jupyterlab>=3.*
   - matplotlib
+  - libopenblas!=0.3.31  # broken dsyevr LAPACK workspace-size query; see env_check.py
   - non_local_detector
   - numpy
   - pip>=20.2.*

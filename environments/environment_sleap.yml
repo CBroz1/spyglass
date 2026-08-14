@@ -28,6 +28,7 @@ dependencies:
   - ipympl
   - jupyterlab>=3.*
   - matplotlib
+  # - libopenblas!=0.3.31 # DLC only
   - non_local_detector
   # - numpy # DLC only
   - pip>=20.2.*
