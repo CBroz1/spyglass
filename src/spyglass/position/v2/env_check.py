@@ -49,11 +49,14 @@ def _blas_lapack_error():
     """Return a LAPACK error message from a trivial eigh call, or None.
 
     Returns None if numpy/scipy are missing (nothing to check) or if the
-    call succeeds. A broken BLAS/LAPACK build (seen with a conda-forge
-    ``libopenblas`` 0.3.31 + ``nomkl`` combo) fails even this trivial case,
-    surfacing as a cryptic ``_flapack.error`` deep inside an unrelated
+    call succeeds. A broken BLAS/LAPACK build (seen with a mismatched
+    conda-forge ``liblapack`` netlib build + ``blas=openblas``, e.g. pulled
+    in by a ``defaults``-channel ``numpy-base``) fails on a 1x1 matrix --
+    the ``dsyevr`` LAPACK workspace-size query hits a ``liwork=1`` edge case
+    -- surfacing as a cryptic ``_flapack.error`` deep inside an unrelated
     import chain (e.g. deeplabcut -> filterpy -> scipy.stats, which calls
-    ``eigh`` as an import-time side effect).
+    ``eigh`` on a 1x1 matrix as an import-time side effect). A 2x2 matrix
+    does NOT reproduce this; the check must use a 1x1 matrix.
     """
     try:
         import numpy
@@ -61,7 +64,7 @@ def _blas_lapack_error():
     except ImportError:
         return None
     try:
-        scipy.linalg.eigh(numpy.eye(2))
+        scipy.linalg.eigh(numpy.eye(1))
     except Exception as exc:
         return str(exc)
     return None
@@ -142,18 +145,23 @@ def check_environment(raise_on_error: bool = False, verbose: bool = True):
     blas_error = _blas_lapack_error()
     if blas_error:
         problems.append(
-            "scipy.linalg.eigh failed on a trivial 2x2 matrix -- this "
+            "scipy.linalg.eigh failed on a trivial 1x1 matrix -- this "
             f"environment's BLAS/LAPACK build is broken ({blas_error}). "
             "This crashes any import that triggers it transitively (e.g. "
             "deeplabcut -> filterpy -> scipy.stats calls eigh at import "
             "time), often deep in an unrelated traceback.\n"
-            "    Seen with libopenblas 0.3.31 + a 'nomkl' pin forcing "
-            "OpenBLAS instead of MKL. Fix -- rebuild the BLAS backend via "
-            "conda (not pip):\n"
-            "      conda remove nomkl\n"
-            '      conda install -c conda-forge "blas=*=*mkl"\n'
-            "    Or, to stay on OpenBLAS, pin away from the broken build:\n"
-            '      conda install -c conda-forge "libopenblas!=0.3.31"'
+            "    Most often caused by a `defaults`-channel numpy install: "
+            "its `numpy-base` companion package hard-depends on "
+            "`blas * openblas`, which combines with conda-forge's "
+            "`liblapack` into a mismatched, broken netlib/openblas build. "
+            "Pinning a specific libopenblas version is NOT a reliable fix -- "
+            "the mismatch can recur on other point releases. Fix -- drop "
+            "the `defaults` channel and reinstall numpy/scipy from "
+            "conda-forge only (see environments/environment_dlc.yml):\n"
+            "      conda install -c conda-forge --override-channels "
+            '"numpy" "scipy"\n'
+            "    Or force the MKL backend explicitly:\n"
+            '      conda install -c conda-forge "blas=*=*mkl"'
         )
 
     if verbose:

@@ -17,7 +17,7 @@
 #       NOT reuse, clone, or `env update` onto a Position-V1 environment.
 name: spyglass-dlc3
 channels:
-  - defaults
+  # - defaults # DO NOT re-add: breaks BLAS/LAPACK, see CLAUDE.md Lessons Learned
   - conda-forge
   - pytorch
   - franklab
@@ -28,7 +28,6 @@ dependencies:
   - ipympl
   - jupyterlab>=3.*
   - matplotlib
-  - libopenblas!=0.3.31  # broken dsyevr LAPACK workspace-size query; see env_check.py
   - non_local_detector
   - numpy
   - pip>=20.2.*
