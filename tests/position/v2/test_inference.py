@@ -81,6 +81,50 @@ class TestModelInference:
         assert captured.get("save_as_csv") is True
         assert Path(captured.get("destfolder")) == destfolder
 
+    def test_run_inference_cuda_unpickling_error_hint(
+        self,
+        model,
+        dlc_project_config,
+        dlc_bootstrapped_session,
+        mock_video_file,
+        skip_if_no_dlc,
+        caplog,
+    ):
+        """A CUDA-related UnpicklingError propagates with an actionable hint.
+
+        torch's ``weights_only`` unpickler wraps any snapshot-load failure
+        (including a low-level "device busy/unavailable" CUDA driver error)
+        in a generic ``pickle.UnpicklingError``. run_dlc_inference must not
+        swallow or reclassify it, but should log an actionable hint pointing
+        at GPU contention rather than a corrupt/untrusted file.
+        """
+        import logging
+        import pickle
+        from unittest.mock import patch
+
+        model_key = model.load(model_path=str(dlc_project_config))
+
+        def _fake_analyze(**kwargs):
+            raise pickle.UnpicklingError(
+                "Weights only load failed... WeightsUnpickler error: CUDA "
+                "error: CUDA-capable device(s) is/are busy or unavailable"
+            )
+
+        with (
+            # spyglass's own logger has its level pinned to INFO (see
+            # spyglass.utils.logging), which filters out the .debug() calls
+            # _err_msg uses in test mode before caplog's root-level setting
+            # ever sees them. Override this specific logger by name.
+            caplog.at_level(logging.DEBUG, logger="spyglass"),
+            patch("deeplabcut.analyze_videos", side_effect=_fake_analyze),
+            pytest.raises(pickle.UnpicklingError),
+        ):
+            model.run_inference(model_key, video_path=str(mock_video_file))
+
+        assert any(
+            "GPU availability problem" in rec.message for rec in caplog.records
+        ), "Expected an actionable GPU-contention hint in the logs"
+
     def test_run_inference_invalid_model(
         self,
         model,

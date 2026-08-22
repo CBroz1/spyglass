@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import pickle
 from pathlib import Path
 from typing import Union
 
@@ -167,8 +168,30 @@ class PoseInferenceRunner(BaseMixin):
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 analyze_videos(**analyze_params)
-        except (RuntimeError, OSError, ValueError) as e:
-            self._err_msg(f"DLC inference failed: {e}")
+        except (
+            RuntimeError,
+            OSError,
+            ValueError,
+            pickle.UnpicklingError,
+        ) as e:
+            # torch.load's weights_only unpickler wraps ANY failure during
+            # snapshot loading -- including a low-level CUDA driver error --
+            # in a generic UnpicklingError with a scary "arbitrary code
+            # execution" warning that has nothing to do with the real cause.
+            # Detect the common case (GPU busy/unavailable/locked by another
+            # process) and add an actionable hint alongside the original
+            # message, rather than letting it look like a corrupt/untrusted
+            # snapshot file.
+            hint = ""
+            if "cuda" in str(e).lower():
+                hint = (
+                    " This looks like a GPU availability problem (busy, "
+                    "locked by another process, or a driver/visibility "
+                    "issue) rather than a bad model file -- check "
+                    "`nvidia-smi` on the inference host, or retry with a "
+                    "CPU PoseEstimParams entry (device='cpu')."
+                )
+            self._err_msg(f"DLC inference failed: {e}{hint}")
             raise
 
         output_folder = Path(destfolder) if destfolder else None
