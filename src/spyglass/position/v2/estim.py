@@ -38,7 +38,7 @@ from pynwb import NWBHDF5IO
 
 from spyglass.common import AnalysisNwbfile
 from spyglass.common.common_behav import VideoFile
-from spyglass.position.utils.dlc_io import parse_dlc_h5_output
+from spyglass.position.utils.dlc_io import dedupe_warnings, parse_dlc_h5_output
 from spyglass.position.utils.sleap_io import parse_sleap_analysis_h5
 from spyglass.position.utils.validation import (
     validate_centroid_params,
@@ -1010,7 +1010,7 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         inference_params = fetched["inference_params"]
         video_paths = fetched["video_paths"]
 
-        self._info_msg(
+        self._logger.debug(
             "PoseEstim.make_compute: "
             + f"tool={tool}, mode={task_mode}, output_dir={output_dir}"
         )
@@ -1066,7 +1066,6 @@ class PoseEstim(SpyglassMixin, dj.Computed):
                     f"{key['vid_group_id']}. Cannot trigger inference "
                     "without registered video files in VideoFile table."
                 )
-            self._info_msg("Triggering inference...")
             model_key = {"model_id": key["model_id"]}
             destfolder = output_dir if output_dir else None
             output_file_info = self.run_inference(
@@ -1303,7 +1302,7 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             params_info = (ModelParams() & model_params_key).fetch1()
             tool = params_info["tool"]
 
-        self._info_msg(f"Running inference with {tool} model: {model_key}")
+        self._logger.debug(f"Running inference with {tool} model: {model_key}")
 
         if tool == "DLC":
             runner = self._get_inference_runner_cls()()
@@ -1398,7 +1397,10 @@ class PoseEstim(SpyglassMixin, dj.Computed):
                 f"'{key['vid_group_id']}'. Cannot fetch real timestamps."
             )
         try:
-            nwb_data = (VideoFile & vf_keys[0]).fetch_nwb()[0]
+            # hdmf warns once per legacy Device.model string, so one NWB
+            # read yields several lines about a single schema fact.
+            with dedupe_warnings():
+                nwb_data = (VideoFile & vf_keys[0]).fetch_nwb()[0]
             ts = np.asarray(nwb_data["video_file"].timestamps)
         except (OSError, KeyError, TypeError, AttributeError) as e:
             # Don't swallow silently: this is the difference between "the

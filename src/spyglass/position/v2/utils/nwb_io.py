@@ -201,7 +201,13 @@ class PoseInferenceRunner(BaseMixin):
             kwargs, analyze_params, self._warn_msg, context="inference"
         )
 
-        self._info_msg(f"Running DLC inference on {videos}")
+        self._info_msg(
+            f"Running DLC inference on {len(videos)} video(s) "
+            f"[model={Path(model_path).parent.name}, "
+            f"device={analyze_params.get('device', 'auto')}, "
+            f"batch_size={analyze_params.get('batch_size', 'default')}]: "
+            f"{videos}"
+        )
         self._logger.debug("DLC parameters: %s", analyze_params)
 
         try:
