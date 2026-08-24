@@ -54,6 +54,7 @@ from spyglass.position.v2.train import (
     default_pk_name,
     resolve_model_path,
 )
+from spyglass.position.v2.utils.device import resolve_cuda_device
 from spyglass.position.v2.utils.nwb_io import (
     NDXPoseBuilder,
     PoseInferenceRunner,
@@ -999,7 +1000,9 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         RuntimeError
             If trigger mode requests a CUDA device that is not visible to
             PyTorch (see :func:`~spyglass.position.v2.utils.nwb_io.
-            check_gpu_available`).
+            check_gpu_available`), or if no visible CUDA device has enough
+            free memory (see :func:`~spyglass.position.v2.utils.device.
+            resolve_cuda_device`).
         """
         task_mode = fetched["task_mode"]
         output_dir = fetched["output_dir"]
@@ -1014,6 +1017,20 @@ class PoseEstim(SpyglassMixin, dj.Computed):
 
         if task_mode == "trigger":
             check_gpu_available(inference_params.get("device"))
+            # A bare "cuda" means cuda:0 to PyTorch, which on a shared
+            # multi-GPU host is an arbitrary pick that may be the one
+            # saturated device (issue #1676). Resolve to the least-loaded
+            # GPU at dispatch. Copied, not mutated in place: the fetched
+            # params mirror a stored PoseEstimParams row, and the chosen
+            # index is a runtime detail that must not leak back into it.
+            resolved_device = resolve_cuda_device(
+                inference_params.get("device")
+            )
+            if resolved_device != inference_params.get("device"):
+                inference_params = {
+                    **inference_params,
+                    "device": resolved_device,
+                }
 
         # Branch — 3D triangulation vs standard 2D path.
         if fetched["is_3d"]:
