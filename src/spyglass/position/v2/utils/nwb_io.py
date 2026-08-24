@@ -19,6 +19,56 @@ except ImportError:  # pragma: no cover
     ndx_pose = None  # pragma: no cover
 
 
+def check_gpu_available(device: Union[str, None]) -> None:
+    """Raise fast if a GPU device is requested but none is visible.
+
+    Meant to be called at the top of ``PoseEstim.make_compute``, before any
+    video conversion or model-loading work, so a missing/misconfigured GPU
+    fails immediately with a clear message instead of surfacing deep inside
+    ``torch.load`` as a cryptic ``pickle.UnpicklingError`` after several
+    minutes of setup work (see issue #1676).
+
+    This only checks basic driver/runtime visibility
+    (``torch.cuda.is_available()``); it cannot detect a GPU that is present
+    but locked/busy from another process's exclusive context -- that
+    condition is inherently racy to pre-check (the device can be grabbed
+    between the check and the actual use) and is handled instead by the
+    actionable hint in :meth:`PoseInferenceRunner.run_dlc_inference` if it
+    happens at load time.
+
+    DLC 3.x/PyTorch is the only V2 inference backend (V1's DeepLabCut used
+    TensorFlow instead), so this lives alongside ``PoseInferenceRunner``
+    rather than in the tool-agnostic ``position/utils/`` package -- a bare
+    ``torch.cuda.is_available()`` check would be silently wrong for a
+    TensorFlow caller, and V1 has no comparable ``device="cuda"`` string
+    convention to check (it takes an integer ``gputouse`` instead).
+
+    Parameters
+    ----------
+    device : str or None
+        The requested device string, e.g. ``"cuda"``, ``"cuda:0"``,
+        ``"cpu"``, or ``None``. A no-op unless it requests a CUDA device.
+
+    Raises
+    ------
+    RuntimeError
+        If a CUDA device is requested but ``torch.cuda.is_available()`` is
+        False.
+    """
+    if not device or "cuda" not in str(device).lower():
+        return
+
+    import torch  # pragma: no cover -- CI has no GPU, see below
+
+    if not torch.cuda.is_available():  # pragma: no cover
+        raise RuntimeError(  # pragma: no cover
+            f"Requested device={device!r}, but no CUDA device is visible "
+            "to PyTorch on this machine (torch.cuda.is_available() is "
+            "False). Check GPU drivers and CUDA_VISIBLE_DEVICES, or use a "
+            "CPU-configured PoseEstimParams entry (device='cpu')."
+        )
+
+
 class PoseInferenceRunner(BaseMixin):
     """Handles pose estimation inference execution for different tools."""
 

@@ -58,6 +58,7 @@ from spyglass.position.v2.utils.nwb_io import (
     NDXPoseBuilder,
     PoseInferenceRunner,
     _populate_nwb_pose_estimation,
+    check_gpu_available,
 )
 from spyglass.position.v2.utils.params import (
     CentroidParams,
@@ -995,6 +996,10 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             If trigger mode is requested with no registered video files.
         FileNotFoundError
             If no tool output files can be located.
+        RuntimeError
+            If trigger mode requests a CUDA device that is not visible to
+            PyTorch (see :func:`~spyglass.position.v2.utils.nwb_io.
+            check_gpu_available`).
         """
         task_mode = fetched["task_mode"]
         output_dir = fetched["output_dir"]
@@ -1006,6 +1011,9 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             "PoseEstim.make_compute: "
             + f"tool={tool}, mode={task_mode}, output_dir={output_dir}"
         )
+
+        if task_mode == "trigger":
+            check_gpu_available(inference_params.get("device"))
 
         # Branch — 3D triangulation vs standard 2D path.
         if fetched["is_3d"]:
@@ -1375,7 +1383,18 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         try:
             nwb_data = (VideoFile & vf_keys[0]).fetch_nwb()[0]
             ts = np.asarray(nwb_data["video_file"].timestamps)
-        except (OSError, KeyError, TypeError, AttributeError):
+        except (OSError, KeyError, TypeError, AttributeError) as e:
+            # Don't swallow silently: this is the difference between "the
+            # video-file fallback below actually ran and got a real answer"
+            # and "something (an NFS/HDF5 file-lock hiccup, a genuinely
+            # missing NWB object, ...) broke the primary lookup" -- the
+            # latter needs to be visible to diagnose, not just a generic
+            # "both paths failed" message at the end.
+            logger.warning(
+                f"NWB timestamp lookup failed for vid_group_id="
+                f"'{key['vid_group_id']}' ({type(e).__name__}: {e}); "
+                "falling back to video-file frame count."
+            )
             ts = None  # fall through to video-file fallback below
 
         if ts is not None and len(ts) > 0:
@@ -1383,12 +1402,23 @@ class PoseEstim(SpyglassMixin, dj.Computed):
 
         # Fallback: derive timestamps from the actual video file (e.g. for
         # tutorial/bootstrap sessions whose NWB object IDs are synthetic).
+        # Uses the already-converted mp4 (the same one DLC inference runs
+        # on) via the shared ensure_mp4, not the raw registered
+        # VideoFile.path directly -- OpenCV cannot read a frame count from
+        # a raw H.264 elementary stream (reports a nonsensical negative
+        # value instead of raising), the same limitation ensure_mp4/find_mp4
+        # elsewhere in this pipeline exist to work around.
         video_path = (VideoFile & vf_keys[0]).fetch1("path")
         if video_path:
             try:
+                from spyglass.position.utils.general import ensure_mp4
+                from spyglass.settings import pose_video_dir
+
+                countable_path = ensure_mp4([video_path], pose_video_dir)[0]
+
                 import cv2
 
-                cap = cv2.VideoCapture(str(video_path))
+                cap = cv2.VideoCapture(str(countable_path))
                 fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
                 n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 cap.release()
