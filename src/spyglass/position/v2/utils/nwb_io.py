@@ -261,7 +261,7 @@ class PoseInferenceRunner(BaseMixin):
                     output_files, key=lambda p: p.stat().st_mtime
                 )
                 output_paths.append(str(latest_output))
-                self._info_msg(f"DLC created: {latest_output}")
+                self._logger.debug(f"DLC created: {latest_output}")
             else:
                 self._warn_msg(
                     f"No DLC output found for {vid_path.stem} in {output_dir}"
@@ -668,7 +668,9 @@ class NDXPoseBuilder(BaseMixin):
             behavior_module.add(pose_estimation)
             nwb_io.write(nwbf)
 
-        self._info_msg(f"Stored pose estimation in NWB: {analysis_abs_path}")
+        self._logger.debug(
+            f"Stored pose estimation in NWB: {analysis_abs_path}"
+        )
 
 
 def _populate_nwb_pose_estimation(

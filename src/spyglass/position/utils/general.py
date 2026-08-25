@@ -446,7 +446,7 @@ def _convert_mp4(
             dest_filename = os.path.splitext(dest_filename)[0]
     dest_path = Path(f"{dest_path}/{dest_filename}.{videotype}")
     if dest_path.exists():
-        logger.info(f"{dest_path} already exists, skipping conversion")
+        logger.debug(f"{dest_path} already exists, skipping conversion")
         # Unsilence the collision bug: under the legacy naming, a *different*
         # source can reduce to this same name, so the existing mp4 may not be
         # this source's video. Raise instead of silently returning the wrong

@@ -560,7 +560,7 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         if not dlc_output_path.exists():
             raise FileNotFoundError(f"DLC output not found: {dlc_output_path}")
 
-        logger.info_msg(f"Loading DLC output: {dlc_output_path}")
+        logger.debug(f"Loading DLC output: {dlc_output_path}")
 
         # Load DLC output data using consolidated parser
         df, scorer, bodyparts = parse_dlc_h5_output(dlc_output_path)
@@ -1157,7 +1157,7 @@ class PoseEstim(SpyglassMixin, dj.Computed):
                 ctx=store_ctx,
             )
             self.insert1({**key, "analysis_file_name": analysis_file_name})
-            self._info_msg("PoseEstim (3D) entry inserted.")
+            self._logger.debug("PoseEstim (3D) entry inserted.")
             return
 
         analysis_file_name = self._store_estimation_nwb(
@@ -1170,7 +1170,7 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             ctx=store_ctx,
         )
         self.insert1({**key, "analysis_file_name": analysis_file_name})
-        self._info_msg("PoseEstim entry inserted.")
+        self._logger.debug("PoseEstim entry inserted.")
 
     def _find_output_files(
         self,
