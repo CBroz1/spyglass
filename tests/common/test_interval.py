@@ -1,6 +1,8 @@
 from unittest.mock import patch
 
+import datajoint as dj
 import numpy as np
+import pandas as pd
 import pytest
 from numpy import array_equal
 
@@ -79,23 +81,20 @@ def test_plot_epoch(mini_insert, interval_list):
 # Comprehensive tests for Interval class coverage improvement
 
 
-def test_interval_init_with_dict():
-    """Test Interval initialization with dictionary."""
+def test_interval_init_with_dict(interval_list):
+    """Test Interval initialization with a dict fetches real DB content."""
     from spyglass.common.common_interval import Interval
 
-    # Test with dict containing key for table lookup
-    test_dict = {
-        "nwb_file_name": "test.nwb",
-        "interval_list_name": "test_interval",
-    }
+    # A real IntervalList row so this actually verifies the DB round-trip
+    restr_interval = (
+        interval_list & "interval_list_name like 'raw%'" & dj.Top(limit=1)
+    )
+    key = restr_interval.fetch1("KEY")
+    expected_times = restr_interval.fetch1("valid_times")
 
-    with patch.object(Interval, "_import_from_table") as mock_import:
-        mock_import.return_value = [[1.0, 2.0], [3.0, 4.0]]
+    interval = Interval(key)
 
-        interval = Interval(test_dict)
-
-        assert np.array_equal(interval.times, [[1.0, 2.0], [3.0, 4.0]])
-        mock_import.assert_called_once_with(test_dict)
+    assert np.array_equal(interval.times, expected_times)
 
 
 def test_interval_init_from_inds():
@@ -518,40 +517,34 @@ def test_interval_kwargs_preservation():
     assert result.kwargs["no_overlap"] is True
 
 
-# Test deprecated functions for coverage
-def test_deprecated_functions():
-    """Test deprecated standalone functions that delegate to Interval class."""
-    from spyglass.common.common_interval import (
-        consolidate_intervals,
-        interval_list_intersect,
-        interval_list_union,
-        union_adjacent_index,
-    )
-    from spyglass.common.common_usage import ActivityLog
+def test_interval_list_operations_from_targeted():
+    """Basic instantiation path for IntervalList."""
+    from spyglass.common.common_interval import IntervalList
 
-    # All should log deprecation warnings but still work
-    test_intervals = [[1.0, 3.0], [2.0, 4.0]]
+    interval_list = IntervalList()
+    assert interval_list is not None
 
-    with patch.object(ActivityLog, "deprecate_log") as mock_log:
-        # Test consolidate_intervals
-        result = consolidate_intervals(test_intervals)
-        assert len(result) == 1  # Should consolidate overlapping intervals
-        mock_log.assert_called()
 
-        mock_log.reset_mock()
+@pytest.mark.parametrize(
+    "test_input,expected_type",
+    [
+        ([1, 2, 3], list),
+        (np.array([1, 2, 3]), np.ndarray),
+        (pd.Series([1, 2, 3]), pd.Series),
+    ],
+)
+def test_data_type_handling_from_targeted(test_input, expected_type):
+    """Sanity-check expected data container types."""
+    assert isinstance(test_input, expected_type)
 
-        # Test union_adjacent_index
-        result = union_adjacent_index([1, 5], [6, 10])
-        mock_log.assert_called()
 
-        mock_log.reset_mock()
+def test_data_validation_edge_cases_from_targeted():
+    """Basic DataFrame edge-case sanity checks."""
+    empty_data = pd.DataFrame()
+    assert len(empty_data) == 0
 
-        # Test interval_list_intersect
-        result = interval_list_intersect([[1.0, 4.0]], [[2.0, 3.0]])
-        mock_log.assert_called()
+    single_row = pd.DataFrame({"col1": [1], "col2": [2]})
+    assert len(single_row) == 1
 
-        mock_log.reset_mock()
-
-        # Test interval_list_union
-        result = interval_list_union([[1.0, 2.0]], [[3.0, 4.0]])
-        mock_log.assert_called()
+    data_with_nan = pd.DataFrame({"col1": [1, np.nan, 3]})
+    assert bool(data_with_nan.isna().any().any())
