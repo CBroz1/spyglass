@@ -1,5 +1,4 @@
 import re
-from tqdm import tqdm
 from collections import defaultdict
 from functools import reduce
 from pathlib import Path
@@ -10,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pynwb
 from pynwb.behavior import CompassDirection
+from tqdm import tqdm
 
 from spyglass.common.common_device import CameraDevice
 from spyglass.common.common_ephys import Raw  # noqa: F401

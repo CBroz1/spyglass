@@ -255,8 +255,8 @@ def get_span_start_stop(indices):
 
 
 # Video/path helpers moved to utils.general — re-export for backward compat
+from spyglass.position.utils.general import _check_packets  # noqa: F401
 from spyglass.position.utils.general import (
-    _check_packets,  # noqa: F401
     _convert_mp4,
     find_mp4,
     get_video_info,
