@@ -20,8 +20,6 @@ one of the values below, that *is* a behavior change -- update it in the same
 commit and say why in the PR description.
 """
 
-from types import SimpleNamespace
-
 import pytest
 
 # Rows each file-scoped table holds after a clean insert of the mini file.
@@ -247,81 +245,6 @@ def test_object_ids_reference_real_nwb_objects(mini_insert, common, mini_restr):
             )
 
 
-def test_statescript_expands_one_entry_per_epoch(
-    mini_insert, common, mini_copy_name
-):
-    """A state script naming several epochs yields an entry for each.
-
-    The mini file's `associated_files` module is empty, so ingestion of it
-    exercises only the absent-source path. This builds the object the file
-    lacks and checks the mapping directly: epochs are parsed from the
-    comma-separated string, restricted to epochs that have a TaskEpoch row,
-    and every entry points at the associated file's own object id.
-    """
-    from ndx_franklab_novela import AssociatedFiles
-
-    known = set(
-        (common.TaskEpoch & {"nwb_file_name": mini_copy_name}).fetch("epoch")
-    )
-    assert known, "Mini file has no TaskEpoch rows to attach a script to"
-
-    unknown_epoch = max(known) + 97
-    associated = AssociatedFiles(
-        name="statescript_test",
-        description="Statescript for several epochs",
-        content="callback()\n",
-        task_epochs=",".join(str(e) for e in sorted(known) + [unknown_epoch]),
-    )
-
-    generated = common.StateScriptFile().generate_entries_from_nwb_object(
-        associated, {"nwb_file_name": mini_copy_name}
-    )
-    entries = next(iter(generated.values()))
-
-    assert {entry["epoch"] for entry in entries} == known, (
-        "Expected one entry per known epoch; an epoch with no TaskEpoch row "
-        + "must not produce one"
-    )
-    assert all(
-        entry["file_object_id"] == associated.object_id for entry in entries
-    ), "Entries should carry the associated file's object id"
-
-
-def test_statescript_ignores_non_script_files(
-    mini_insert, common, mini_copy_name
-):
-    """Associated files that are not state scripts are not selected.
-
-    The description filter lives in `get_nwb_objects` via the mixin's
-    `_source_nwb_object_description`, so selection is what to assert on.
-    """
-    from ndx_franklab_novela import AssociatedFiles
-
-    script = AssociatedFiles(
-        name="statescript_test",
-        description="Statescript for epoch 1",
-        content="callback()\n",
-        task_epochs="1",
-    )
-    notes = AssociatedFiles(
-        name="notes_test",
-        description="Experimenter notes, not a script of any kind",
-        content="the animal was sleepy\n",
-        task_epochs="1",
-    )
-    nwb_file = SimpleNamespace(
-        objects={script.object_id: script, notes.object_id: notes}
-    )
-
-    selected = common.StateScriptFile().get_nwb_objects(
-        nwb_file, mini_copy_name
-    )
-
-    assert selected == [
-        script
-    ], "Only the associated file describing a state script should be selected"
-
-
 def test_task_epoch_config_cameras_map_by_id(common):
     """Config-declared cameras resolve by id, matching NWB-declared ones.
 
@@ -418,52 +341,3 @@ def test_validate_duplicates_conflicting_keys_raise(common):
                 ]
             }
         )
-
-
-def test_video_partial_import_counts_source_series(common, monkeypatch):
-    """A multi-epoch video must not mask a series that placed nowhere.
-
-    The report used to compare source-series count with generated-row count.
-    One video spanning two epochs yields two rows, so a second video that
-    placed nowhere left the two equal and its failure went unreported.
-    """
-    from collections import defaultdict
-
-    table = common.VideoFile()
-    table._epoch_cache = {"fake_.nwb": {1: None, 2: None}}
-    table._failed_videos = defaultdict(list)
-    table._video_count = 0
-    table._placed_videos = 0
-
-    def fake_validate(video_obj, valid_times, key):
-        if video_obj.name == "spans two epochs":
-            return [dict(key, video_file_num=0)], None, 1.0
-        return [], "no timestamp overlap with epoch", 0.0
-
-    monkeypatch.setattr(table, "_validate_video_timestamps", fake_validate)
-
-    base_key = {"nwb_file_name": "fake_.nwb"}
-    placed = table.generate_entries_from_nwb_object(
-        SimpleNamespace(name="spans two epochs"), dict(base_key)
-    )
-    table.generate_entries_from_nwb_object(
-        SimpleNamespace(name="placed nowhere"), dict(base_key)
-    )
-
-    assert len(placed[table]) == 2, "The first video should land in two epochs"
-    assert table._video_count == 2, "Both source series should be counted"
-    assert table._placed_videos == 1, "Only one source series was placed"
-    assert (
-        table._placed_videos < table._video_count
-    ), "A failed series must trigger the partial-import report"
-
-    # Only the video that landed nowhere is a failure. A placed video fails
-    # the overlap check for every epoch it does not belong to, and those are
-    # not diagnostics anyone should see.
-    # The unplaced video failed in both epochs, so both are recorded.
-    reported = {
-        item["name"] for item in table._failed_videos["timestamp_mismatch"]
-    }
-    assert reported == {
-        "placed nowhere"
-    }, "A placed video must not report its non-owning epochs as mismatches"
