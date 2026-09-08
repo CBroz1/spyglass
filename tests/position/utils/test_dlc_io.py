@@ -495,6 +495,7 @@ class TestDLCProjectReader:
         assert reader.model["iteration"] == 0
         assert reader.model["trainingsetindex"] == 0
         assert reader.model["training_iteration"] == 50000
+        assert reader.model["snapshot_uid"] == "50000"  # DLC 2.x: bare count
         assert reader.fps == 30
         assert reader.nframes == 5
 
@@ -563,3 +564,52 @@ class TestDoPoseEstimation:
         call_kwargs = mock_torch_analyze.call_args[1]
         assert "TFGPUinference" not in call_kwargs
         assert "gputouse" not in call_kwargs
+
+
+class TestParseScorerSnapshot:
+    """`parse_scorer_snapshot` must span DLC 2.x and 3.x scorer formats.
+
+    DLC only ever *writes* the scorer name — it ships no parser, and neither
+    engine records the iteration count anywhere else in the metadata pickle.
+    These are the shapes its own formatters can emit.
+    """
+
+    @pytest.mark.parametrize(
+        "scorer, uid, iteration",
+        [
+            # DLC 2.x (TF): scorer ends in a bare training-iteration count.
+            ("DLC_resnet50_testJun1shuffle1_50000", "50000", 50000),
+            # DLC 3.x (PyTorch): Snapshot.uid() -> "{epochs}" ...
+            ("DLC_Resnet50_tAug1shuffle1_snapshot_150", "150", 150),
+            # ... or "best-{epochs}" for the best-performing checkpoint.
+            (
+                "DLC_Resnet50_tAug1shuffle1_snapshot_best-195",
+                "best-195",
+                195,
+            ),
+            # Top-down models prepend a detector uid; the pose snapshot still
+            # supplies the trailing count.
+            (
+                "DLC_Resnet50_tAug1shuffle1_detector_200_snapshot_best-195",
+                "best-195",
+                195,
+            ),
+            (
+                "DLC_Resnet50_tAug1_detector_best-100_snapshot_best-195",
+                "best-195",
+                195,
+            ),
+            # DLC 2.x placeholder when no snapshot could be resolved: keep the
+            # token, decline to invent a count.
+            ("DLC_resnet50_testJun1shuffle1_unknown", "unknown", None),
+            ("", None, None),
+            (None, None, None),
+        ],
+    )
+    def test_parses_both_engines(self, scorer, uid, iteration):
+        from spyglass.position.utils.dlc_io import DLCProjectReader
+
+        assert DLCProjectReader.parse_scorer_snapshot(scorer) == (
+            uid,
+            iteration,
+        )

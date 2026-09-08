@@ -510,21 +510,7 @@ class DLCProjectReader:  # Note: simplifying to require only project path
         self._rawdata = None
         self._yml = None
         self._data = None
-
-        yml_frac = (np.array(self.yml["TrainingFraction"]) * 100).astype(int)
-        pkl_frac = int(self.pkl["training set fraction"] * 100)
-        shuffle = re.search(r"shuffle(\d+)", self.pkl["Scorer"]).groups()[0]
-
-        self.model = {
-            "Scorer": self.pkl["Scorer"],
-            "Task": self.yml["Task"],
-            "date": self.yml["date"],
-            "iteration": self.pkl["iteration (active-learning)"],
-            "shuffle": int(shuffle),
-            "snapshotindex": self.yml["snapshotindex"],
-            "trainingsetindex": np.where(yml_frac == pkl_frac)[0][0],
-            "training_iteration": int(self.pkl["Scorer"].split("_")[-1]),
-        }
+        self._model = None
 
         self.fps = self.pkl["fps"]
         self.nframes = self.pkl["nframes"]
@@ -537,6 +523,60 @@ class DLCProjectReader:  # Note: simplifying to require only project path
             with open(self.pkl_path, "rb") as f:
                 self._pkl = pickle.load(f)
         return self._pkl["data"]
+
+    @staticmethod
+    def parse_scorer_snapshot(
+        scorer: str,
+    ) -> Tuple[Optional[str], Optional[int]]:
+        """Split a DLC scorer name into ``(snapshot_uid, training_iteration)``.
+
+        DLC only writes scorer names and the trailing differs by version:
+        - 2.x ends in a bare count (``_50000``)
+        - 3.x in a snapshot uid (``_snapshot_150``, or ``_snapshot_best-195``
+        Either element is None when the scorer lacks it.
+        """
+        if not scorer:
+            return None, None
+
+        uid = scorer.rsplit("_", 1)[-1] or None
+        match = re.search(r"(\d+)$", scorer)
+        return uid, int(match.group(1)) if match else None
+
+    @property
+    def model(self) -> dict:
+        """Model metadata from the DLC pickle and project config.
+
+        Lazy on purpose. Nothing in the pipeline reads this --
+        ``DLCPoseEstimation`` uses only ``creation_time`` and ``df`` -- yet every
+        field is derived from a DLC-version-specific format. Computing it in
+        ``__init__`` meant a scorer or config shape we had not seen could fail an
+        otherwise-good ``populate()``. Undrivable fields are None, not an error.
+        """
+        if self._model is not None:
+            return self._model
+
+        scorer = self.pkl.get("Scorer", "")
+        snapshot_uid, training_iteration = self.parse_scorer_snapshot(scorer)
+        shuffle = re.search(r"shuffle(\d+)", scorer)
+
+        # Both engines record the training fraction, but a config edited after
+        # inference may no longer list it.
+        yml_frac = (np.array(self.yml["TrainingFraction"]) * 100).astype(int)
+        pkl_frac = int(self.pkl["training set fraction"] * 100)
+        frac_idx = np.where(yml_frac == pkl_frac)[0]
+
+        self._model = {
+            "Scorer": scorer,
+            "Task": self.yml["Task"],
+            "date": self.yml["date"],
+            "iteration": self.pkl["iteration (active-learning)"],
+            "shuffle": int(shuffle.group(1)) if shuffle else None,
+            "snapshotindex": self.yml["snapshotindex"],
+            "trainingsetindex": int(frac_idx[0]) if len(frac_idx) else None,
+            "snapshot_uid": snapshot_uid,
+            "training_iteration": training_iteration,
+        }
+        return self._model
 
     @property  # DLC aux_func.read_config exists, but it rewrites proj path
     def yml(self) -> dict:
