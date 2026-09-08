@@ -20,20 +20,6 @@ from spyglass.utils import logger
 try:
     from deeplabcut import evaluate_network
     from deeplabcut.utils.auxiliaryfunctions import get_evaluation_folder
-
-    # Check DLC version compatibility
-    try:
-        import deeplabcut
-        from packaging import version
-
-        if version.parse(deeplabcut.__version__) >= version.parse("3.0.0"):
-            logger.warning(
-                f"DLC {deeplabcut.__version__} detected. Position V1 workflows "
-                "were designed for DLC 2.x and may encounter compatibility issues "
-                "with DLC 3.0+. Consider using Position V2 for DLC 3.0+ support."
-            )
-    except (AttributeError, ValueError):
-        pass
 except ImportError:  # pragma: no cover
     evaluate_network, get_evaluation_folder = None, None  # pragma: no cover
 

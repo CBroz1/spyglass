@@ -25,6 +25,41 @@ from spyglass.utils.logging import logger, stream_handler
 
 # validate_smooth_params functionality moved to utils.validation module
 
+_DLC3_WARNED = False
+
+
+def warn_if_dlc3():
+    """Warn once if Position V1 is being run against DeepLabCut 3.x.
+
+    V1 targets the DLC 2.x TensorFlow engine. DLC 3.x defaults to PyTorch,
+    which changes model-folder layout, snapshot naming, and the scorer string
+    -- so V1 may fail in ways that look unrelated. Position V2 supports 3.x.
+
+    Called from V1's DLC entry points rather than at import, so V2 users (who
+    share ``position/utils/``) never see it, and it fires only on real V1 use.
+    """
+    global _DLC3_WARNED
+    if _DLC3_WARNED:
+        return
+
+    try:
+        import deeplabcut
+        from packaging import version
+
+        dlc_version = deeplabcut.__version__
+        if version.parse(dlc_version) < version.parse("3.0.0"):
+            return
+    except (ImportError, AttributeError, ValueError):
+        return  # no DLC, or an unparsable version -- nothing to warn about
+
+    _DLC3_WARNED = True
+    logger.warning(
+        f"DeepLabCut {dlc_version} detected, but Position V1 targets DLC 2.x "
+        "(TensorFlow). DLC 3.x defaults to the PyTorch engine, which changes "
+        "model layout, snapshot naming, and scorer strings; V1 steps may fail "
+        "or silently mis-parse. Use Position V2 for DLC 3.x support."
+    )
+
 
 def _set_permissions(directory, mode, username: str, groupname: str = None):
     """
