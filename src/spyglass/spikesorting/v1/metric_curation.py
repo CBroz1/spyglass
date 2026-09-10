@@ -24,6 +24,7 @@ from spyglass.spikesorting.v1.metric_utils import (
 )
 from spyglass.spikesorting.v1.sorting import SpikeSortingSelection
 from spyglass.utils import SpyglassMixin, logger
+from spyglass.utils.nwb_hash import dir_is_empty
 
 schema = dj.schema("spikesorting_v1_metric_curation")
 
@@ -364,7 +365,7 @@ class MetricCuration(SpyglassMixin, dj.Computed):
         waveforms_dir = temp_dir + "/" + str(key["metric_curation_id"])
         wf_dir_obj = Path(waveforms_dir)
         wf_dir_obj.mkdir(parents=True, exist_ok=True)
-        if not any(wf_dir_obj.iterdir()):  # if the directory is empty
+        if dir_is_empty(wf_dir_obj):  # if the directory is empty
             overwrite = True
 
         if fetch_all:
@@ -373,9 +374,10 @@ class MetricCuration(SpyglassMixin, dj.Computed):
 
         # Extract non-sparse waveforms by default
         waveform_params.setdefault("sparse", False)
-        dir_empty = not Path(waveforms_dir).exists() or not any(
-            Path(waveforms_dir).iterdir()
-        )
+        # NFS leftovers don't count: a dir holding only deferred-unlink
+        # stubs would otherwise skip extraction and load_waveforms would
+        # fail obscurely on the garbage. See utils.nwb_hash.dir_is_empty.
+        dir_empty = dir_is_empty(waveforms_dir)
 
         if overwrite or dir_empty:
             waveforms = si.extract_waveforms(

@@ -1,4 +1,5 @@
 import json
+from itertools import count as itertools_count
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
 from typing import List, Optional, Tuple
@@ -24,9 +25,19 @@ from spyglass.spikesorting.utils import (
 )
 from spyglass.utils import SpyglassMixin, logger
 from spyglass.utils.dj_helper_fn import dj_replace
-from spyglass.utils.nwb_hash import DirectoryHasher
+from spyglass.utils.nwb_hash import DirectoryHasher, is_real_file
 
 schema = dj.schema("spikesorting_recording")
+
+# Files SpikeInterface writes when saving a recording. si_folder.json is
+# written last, so the full set means the write completed. Used to tell a
+# cached recording from debris -- see SpikeSortingRecording._is_usable_recording
+RECORDING_MARKERS = (
+    "si_folder.json",
+    "binary.json",
+    "provenance.json",
+    "probe.json",
+)
 
 
 @schema
@@ -425,10 +436,15 @@ class SpikeSortingRecording(SpyglassMixin, dj.Computed):
         ret = {"name": self._get_recording_name(key), "path": str(rec_path)}
 
         if rec_path.exists():
-            if has_entry:  # if table entry for existing file, use it
+            if not self._is_usable_recording(rec_path):
+                # Exists but holds no usable recording: NFS leftovers, or an
+                # interrupted write. Not a cache hit -- rebuild it.
+                logger.info(f"Discarding unusable recording dir: {rec_path}")
+                self._discard_dir(rec_path)
+            elif has_entry:  # table entry for existing file, use it
                 return {**ret, "hash": self._dir_hash(rec_path)}
-            else:  # if no table entry, assume existing is outdated and delete
-                shutil_rmtree(rec_path)
+            else:  # no table entry, assume existing is outdated and delete
+                self._discard_dir(rec_path)
 
         recording = self._get_filtered_recording(key)
         recording.save(
@@ -439,6 +455,84 @@ class SpikeSortingRecording(SpyglassMixin, dj.Computed):
             _ = self._hash_check(key, rec_path)
 
         return {**ret, "hash": self._dir_hash(rec_path, return_hasher)}
+
+    def _is_usable_recording(self, rec_path):
+        """True if the directory holds a recording SpikeInterface can load.
+
+        Keys on marker files rather than a file count. `si_folder.json` is
+        written last, so its presence means the write finished; a count
+        cannot tell a complete one-segment recording (21 files) from a
+        truncated thirteen-segment one (15). Markers must be real files, so
+        an NFS-stubbed marker does not count as present.
+
+        Parameters
+        ----------
+        rec_path : Path
+            Directory to test.
+
+        Returns
+        -------
+        bool
+            True if every marker file is present as a real file.
+        """
+        return all(
+            is_real_file(rec_path / marker) for marker in RECORDING_MARKERS
+        )
+
+    def _sweep_stale(self, rec_path):
+        """Remove directories set aside by earlier `_discard_dir` calls.
+
+        A discarded directory can only be deleted once the handles that
+        blocked it are closed, which is typically by the next run. Retrying
+        here keeps them from accumulating without adding a retry loop to the
+        delete itself -- still best-effort, and still never blocking.
+
+        Parameters
+        ----------
+        rec_path : Path
+            The recording directory whose `.stale` siblings to sweep.
+        """
+        prefix = rec_path.name + ".stale"
+        # iterdir + startswith, not glob: recording names are built from
+        # user-supplied interval names and may contain glob metacharacters.
+        for sibling in rec_path.parent.iterdir():
+            if sibling.name.startswith(prefix) and sibling.is_dir():
+                shutil_rmtree(sibling, ignore_errors=True)
+
+    def _discard_dir(self, rec_path):
+        """Move a directory aside so a rebuild can take its place.
+
+        Renames before deleting. On NFS, `rmtree` cannot remove a file that
+        another process holds open -- the unlink is deferred and the
+        directory survives, so a rebuild into the same path would fail or
+        merge with the debris. `rename` succeeds regardless of open handles,
+        which frees the name immediately; deleting the renamed directory is
+        then best-effort and may legitimately fail until those handles close.
+
+        Parameters
+        ----------
+        rec_path : Path
+            Directory to discard.
+        """
+        self._sweep_stale(rec_path)
+
+        stale = rec_path.with_name(rec_path.name + ".stale")
+        for i in itertools_count():  # deterministic: no timestamp or random
+            candidate = stale if i == 0 else Path(f"{stale}{i}")
+            if not candidate.exists():
+                stale = candidate
+                break
+
+        try:
+            rec_path.rename(stale)
+        except OSError as e:  # pragma: no cover - rename is near-unfailable
+            logger.warning(f"Could not move {rec_path} aside: {e}")
+            shutil_rmtree(rec_path, ignore_errors=True)
+            return
+
+        shutil_rmtree(stale, ignore_errors=True)
+        if stale.exists():  # open handles: retry on a later run
+            logger.info(f"Deferred cleanup of {stale}; handles still open")
 
     def _hash_check(self, key, rec_path):
         """Check if the hash of the directory matches the hash in the table."""
@@ -486,21 +580,40 @@ class SpikeSortingRecording(SpyglassMixin, dj.Computed):
         return path
 
     def _validate_recording_path(self, path, key, make_if_missing=True):
-        """Validate that the recording path exists."""
+        """Validate that the recording path holds enough files to load.
+
+        Counts only real files: NFS silly-rename leftovers ('.nfs<hex>') are
+        excluded, so a directory of pure leftovers cannot pass this check.
+        See `spyglass.utils.nwb_hash.is_real_file`.
+
+        The threshold is a lower bound, not an expected size. A one-segment
+        recording holds 21 files (4 markers, 15 properties, 2 per segment);
+        real recordings run larger.
+        """
         path_obj = Path(path)
 
-        if not path_obj.exists() and make_if_missing:
-            logger.info(f"Recording path does not exist, recomputing: {path}")
+        # Trigger on usability, not existence: a directory left behind by a
+        # failed delete exists but holds no recording, and branching on
+        # exists() alone would skip the rebuild and fail the count check
+        # below. `_is_usable_recording` is False for a missing path too, so
+        # this covers both cases.
+        if make_if_missing and not self._is_usable_recording(path_obj):
+            logger.info(f"No usable recording, recomputing: {path}")
             SpikeSortingRecording()._make_file(key)
 
         if not path_obj.exists():
             raise FileNotFoundError(f"Recording path does not exist: {path}")
 
-        normal_file_count = 21
-        file_count = sum(1 for f in path_obj.rglob("*") if f.is_file())
-        if file_count < normal_file_count:
+        min_file_count = 21  # one-segment recording, the smallest valid size
+        entries = list(path_obj.rglob("*"))
+        file_count = sum(1 for f in entries if is_real_file(f))
+        if file_count < min_file_count:
+            leftovers = sum(1 for f in entries if f.name.startswith(".nfs"))
+            extra = f", plus {leftovers} NFS leftovers" if leftovers else ""
             raise RuntimeError(
-                f"Files missing! Please delete folder and rerun: {path}"
+                f"Incomplete recording: found {file_count} files{extra}, "
+                f"expected at least {min_file_count}. It will be rebuilt on "
+                f"next access: {path}"
             )
 
     def load_recording(self, key):
@@ -511,12 +624,21 @@ class SpikeSortingRecording(SpyglassMixin, dj.Computed):
     def update_ids(self):
         """Update file hashes for all entries in the table.
 
-        Only used for transitioning to recompute NWB files, see #1093."""
+        Only used for transitioning to recompute NWB files, see #1093.
+
+        Skips directories that hold no usable recording. Hashing an
+        incomplete or debris-filled directory stores a hash no later
+        recompute can reproduce, which then reads as a corruption failure.
+        Leaving the hash NULL is recoverable; storing a wrong one is not.
+        """
         for key in tqdm(self & "hash is NULL", desc="Updating hashes"):
             path = key["recording_path"]
             if not Path(path).exists():
                 logger.warning(f"Recording path {path} does not exist")
                 continue  # pragma: no cover
+            if not self._is_usable_recording(Path(path)):
+                logger.warning(f"Skipping unusable recording dir: {path}")
+                continue
             key["hash"] = self._dir_hash(key["recording_path"])
             self.update1(key)
 

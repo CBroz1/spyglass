@@ -17,6 +17,80 @@ DEFAULT_BATCH_SIZE = 32768
 IGNORED_KEYS = ["version", "source_script"]
 PRECISION_LOOKUP = dict(ProcessedElectricalSeries=4)
 
+NFS_PREFIX = ".nfs"
+
+
+def is_nfs_leftover(path: Path) -> bool:
+    """True if path is an NFS silly-rename leftover ('.nfs<hex>').
+
+    Parameters
+    ----------
+    path : Path
+        Path to test. Not required to exist.
+
+    Returns
+    -------
+    bool
+        True if the name marks a deferred-unlink stub. See `is_real_file`
+        for why this matches '.nfs' rather than every dotfile.
+    """
+    return path.name.startswith(NFS_PREFIX)
+
+
+def dir_is_empty(dir_path: Path) -> bool:
+    """True if a directory is missing or holds nothing but NFS leftovers.
+
+    'Non-empty' is not the same question as 'holds data'. A directory whose
+    only entries are deferred-unlink stubs is empty for every practical
+    purpose, but `any(path.iterdir())` reports it as populated.
+
+    Parameters
+    ----------
+    dir_path : Path
+        Directory to test. Not required to exist.
+
+    Returns
+    -------
+    bool
+        True if the directory does not exist, or holds only leftovers.
+    """
+    dir_path = Path(dir_path)
+    if not dir_path.exists():
+        return True
+    return not any(e for e in dir_path.iterdir() if not is_nfs_leftover(e))
+
+
+def is_real_file(path: Path) -> bool:
+    """True if path is a regular file and not an NFS silly-rename leftover.
+
+    On NFS, unlinking a file that another process still holds open does not
+    remove it. The client renames it to ``.nfs<hex>`` in the same directory
+    and defers the unlink until the last handle closes. These leftovers are
+    not data: whether they exist depends only on which files happened to be
+    open when something else deleted them, so counting or hashing them makes
+    the result depend on unrelated concurrent activity.
+
+    Matches the ``.nfs`` prefix specifically rather than skipping every
+    dotfile. Skipping all dotfiles would be broader than the problem: a
+    future SpikeInterface version could legitimately write a dotfile into a
+    recording directory, and silently excluding it from the hash would look
+    like data corruption when the hash later disagreed. ``.nfs`` is a narrow,
+    client-generated form, verified on this filesystem as ``.nfs`` followed
+    by 24 hex characters. No legitimate dotfile appears in any of the 144
+    recording directories currently on disk.
+
+    Parameters
+    ----------
+    path : Path
+        Path to test.
+
+    Returns
+    -------
+    bool
+        True if the path is a regular file that is not an NFS leftover.
+    """
+    return path.is_file() and not is_nfs_leftover(path)
+
 
 def get_file_namespaces(file_path: Union[str, Path]) -> dict:
     """Get all namespace versions from an NWB file.
@@ -58,6 +132,10 @@ class DirectoryHasher:
         value is different, we assume that the dependency change had no effect
         on the data and ignore the difference.
 
+        NFS silly-rename leftovers ('.nfs<hex>') are skipped, so a directory's
+        hash does not depend on which files happened to be open when something
+        else deleted them. See `is_real_file`.
+
         Parameters
         ----------
         directory_path : str
@@ -84,7 +162,9 @@ class DirectoryHasher:
 
     def compute_hash(self) -> str:
         """Hashes the contents of the directory, recursively."""
-        all_files = [f for f in sorted(self.dir_path.rglob("*")) if f.is_file()]
+        all_files = [
+            f for f in sorted(self.dir_path.rglob("*")) if is_real_file(f)
+        ]
 
         for file_path in all_files:
             if file_path.suffix == ".nwb":
