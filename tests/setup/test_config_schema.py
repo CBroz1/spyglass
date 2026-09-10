@@ -848,7 +848,7 @@ class TestTestModeEnvVarIgnore:
             base_dir=str(test_base), test_mode=True, force_reload=True
         )
 
-        assert cfg._dlc_base == str(test_base / "deeplabcut")
+        assert cfg._pose_base == str(test_base / "deeplabcut")
 
     def test_ignores_dlc_project_path_env_var(self, monkeypatch, test_base):
         """DLC_PROJECT_PATH is the other env-var fallback for DLC base dir."""
@@ -863,7 +863,7 @@ class TestTestModeEnvVarIgnore:
             base_dir=str(test_base), test_mode=True, force_reload=True
         )
 
-        assert cfg._dlc_base == str(test_base / "deeplabcut")
+        assert cfg._pose_base == str(test_base / "deeplabcut")
 
     def test_ignores_moseq_base_dir_env_var(self, monkeypatch, test_base):
         from spyglass.settings import SpyglassConfig
