@@ -613,3 +613,114 @@ class TestParseScorerSnapshot:
             uid,
             iteration,
         )
+
+
+class TestMultiAnimalOptIn:
+    """`allow_multi_animal` relaxes the single-animal guard, loudly.
+
+    SuperAnimal / Model Zoo models are multi-animal by construction: DLC's
+    `create_df_from_prediction(multi_animal=True)` inserts an `individuals`
+    level, so zoo output is 4-level and the default guard rejects it. Spyglass
+    position is built for single-animal tracking, so the guard stays on by
+    default; the flag lets a user proceed and meet whatever downstream failure
+    their data actually causes, rather than being blocked at parse.
+    """
+
+    @staticmethod
+    def _ma_frame(individuals=("ind1",), n=4):
+        """A DLC multi-animal frame: (scorer, individuals, bodyparts, coords)."""
+        scorer = "DLC_Resnet50_zooAug1shuffle1_snapshot_best-195"
+        cols = pd.MultiIndex.from_product(
+            [
+                [scorer],
+                list(individuals),
+                ["nose", "tail"],
+                ["x", "y", "likelihood"],
+            ],
+            names=["scorer", "individuals", "bodyparts", "coords"],
+        )
+        data = np.arange(n * len(cols), dtype=float).reshape(n, len(cols))
+        return pd.DataFrame(data, columns=cols), scorer
+
+    @pytest.fixture
+    def ma_h5(self, tmp_path):
+        df, scorer = self._ma_frame()
+        path = tmp_path / "zoo_ma.h5"
+        df.to_hdf(path, key="df_with_missing", mode="w")
+        return path, scorer
+
+    @pytest.fixture
+    def ma_h5_two(self, tmp_path):
+        df, scorer = self._ma_frame(individuals=("ind1", "ind2"))
+        path = tmp_path / "zoo_ma2.h5"
+        df.to_hdf(path, key="df_with_missing", mode="w")
+        return path, scorer
+
+    def test_default_rejects_multi_animal(self, ma_h5, parse_dlc_h5_output):
+        """Guard stays on by default -- the message must name the cause."""
+        path, _ = ma_h5
+        with pytest.raises(ValueError, match="4 levels"):
+            parse_dlc_h5_output(path)
+
+    def test_flag_accepts_single_individual(
+        self, ma_h5, parse_dlc_h5_output, caplog
+    ):
+        """One individual collapses to the ordinary single-animal frame."""
+        path, scorer = ma_h5
+        with caplog.at_level("WARNING", logger="spyglass"):
+            df, got_scorer, bodyparts = parse_dlc_h5_output(
+                path, allow_multi_animal=True
+            )
+
+        assert "multi-animal" in caplog.text.lower()
+        assert df.columns.nlevels == 3
+        assert got_scorer == scorer
+        assert bodyparts == ["nose", "tail"]
+        assert (scorer, "nose", "x") in df.columns
+
+    def test_flag_keeps_several_individuals_intact(
+        self, ma_h5_two, parse_dlc_h5_output, caplog
+    ):
+        """>1 individual is passed through, not silently narrowed.
+
+        Picking one animal here would be inventing an answer. The user opted
+        into unsupported territory; let the downstream step be the one to fail.
+        """
+        path, _ = ma_h5_two
+        with caplog.at_level("WARNING", logger="spyglass"):
+            df = parse_dlc_h5_output(
+                path, allow_multi_animal=True, return_metadata=False
+            )
+
+        assert df.columns.nlevels == 4
+        assert "2" in caplog.text  # count surfaced to the user
+
+    def test_validate_structure_flag(self, validate_dlc_output_structure):
+        """The standalone validator takes the same opt-in.
+
+        Built with the singular ``bodypart`` level name this validator expects.
+        (DLC itself emits plural ``bodyparts``; the mismatch is pre-existing and
+        only reachable through ``convert_dlc_to_position_df``, which has no
+        production caller.)
+        """
+        scorer = "DLC_Resnet50_zooAug1shuffle1_snapshot_best-195"
+        cols = pd.MultiIndex.from_product(
+            [[scorer], ["ind1"], ["nose", "tail"], ["x", "y", "likelihood"]],
+            names=["scorer", "individuals", "bodypart", "coords"],
+        )
+        df = pd.DataFrame(np.zeros((3, len(cols))), columns=cols)
+
+        with pytest.raises(ValueError, match="4 levels"):
+            validate_dlc_output_structure(df)
+        validate_dlc_output_structure(df, allow_multi_animal=True)
+
+    def test_squeeze_individuals_direct(self, dlc_io_module):
+        """The helper itself, on DLC-realistic plural level names."""
+        squeeze = dlc_io_module.squeeze_individuals
+        one, _ = self._ma_frame()
+        two, _ = self._ma_frame(individuals=("ind1", "ind2"))
+
+        assert squeeze(one, allow_multi_animal=True).columns.nlevels == 3
+        assert squeeze(two, allow_multi_animal=True).columns.nlevels == 4
+        three_level = squeeze(one, allow_multi_animal=True)
+        assert squeeze(three_level) is three_level  # already fine, untouched

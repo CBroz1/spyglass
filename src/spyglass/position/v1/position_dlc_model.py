@@ -9,6 +9,7 @@ from spyglass.position.utils import (
     read_yaml,
     save_yaml,
 )
+from spyglass.position.v1.dlc_utils import warn_if_dlc3
 from spyglass.position.v1.position_dlc_project import BodyPart, DLCProject
 from spyglass.position.v1.position_dlc_training import DLCModelTraining
 from spyglass.utils import SpyglassMixin, logger
@@ -209,6 +210,7 @@ class DLCModel(SpyglassMixin, dj.Computed):
 
     def make(self, key):
         """Populate DLCModel table with model information."""
+        warn_if_dlc3()
         from deeplabcut.utils.auxiliaryfunctions import GetScorerName
 
         _, model_name, table_source = (DLCModelSource & key).fetch1().values()

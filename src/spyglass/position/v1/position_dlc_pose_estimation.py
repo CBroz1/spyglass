@@ -21,6 +21,7 @@ from spyglass.position.utils.general import (
     get_video_info,
     infer_output_dir,
 )
+from spyglass.position.v1.dlc_utils import warn_if_dlc3
 from spyglass.position.v1.position_dlc_model import DLCModel
 from spyglass.settings import test_mode
 from spyglass.utils import SpyglassMixin, logger
@@ -210,6 +211,7 @@ class DLCPoseEstimation(SpyglassMixin, dj.Computed):
 
     def make(self, key):
         """.populate() method will launch training for each PoseEstimationTask"""
+        warn_if_dlc3()
         self.log_path = (
             Path(infer_output_dir(key=key, makedir=False)) / "log.log"
         )

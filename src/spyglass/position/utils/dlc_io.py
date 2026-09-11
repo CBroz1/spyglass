@@ -24,11 +24,92 @@ except ImportError:  # pragma: no cover
     evaluate_network, get_evaluation_folder = None, None  # pragma: no cover
 
 
+def squeeze_individuals(
+    df: pd.DataFrame, allow_multi_animal: bool = False
+) -> pd.DataFrame:
+    """Reduce DLC multi-animal output to the single-animal column layout.
+
+    Spyglass position is single-animal: ``compute_pose_outputs`` derives one
+    centroid and one orientation per frame. DLC's multi-animal output — which
+    every SuperAnimal / Model Zoo model produces, since
+    ``create_df_from_prediction(multi_animal=True)`` inserts an ``individuals``
+    level — is therefore rejected by default.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Parsed DLC output.
+    allow_multi_animal : bool, optional
+        Opt out of the guard. Default False.
+
+    Returns
+    -------
+    pd.DataFrame
+        3-level ``[scorer, bodypart, coords]`` when the extra level held a
+        single individual; otherwise *df* unchanged.
+
+    Raises
+    ------
+    ValueError
+        If the frame is not 3-level and *allow_multi_animal* is False.
+
+    Notes
+    -----
+    With several individuals the frame is returned **untouched**. Choosing one
+    would be inventing an answer the data does not contain; the caller opted
+    into unsupported territory, so the failure belongs at the step that
+    actually cannot cope.
+    """
+    nlevels = getattr(df.columns, "nlevels", None)
+    if isinstance(df.columns, pd.MultiIndex) and nlevels == 3:
+        return df
+
+    if not allow_multi_animal:
+        raise ValueError(
+            f"Invalid DLC file structure. Expected 3-level MultiIndex columns "
+            f"[scorer, bodypart, coords], got {nlevels} levels."
+            + (
+                " This looks like multi-animal output (e.g. a SuperAnimal /"
+                " Model Zoo model). Pass allow_multi_animal=True to proceed"
+                " anyway."
+                if nlevels == 4
+                else ""
+            )
+        )
+
+    if nlevels != 4 or "individuals" not in (df.columns.names or []):
+        logger.warning(
+            "Spyglass position is built for single-animal DLC output; got "
+            f"{nlevels} column levels ({list(df.columns.names or [])}). "
+            "Proceeding as requested -- downstream steps are likely to fail."
+        )
+        return df
+
+    individuals = df.columns.get_level_values("individuals").unique().tolist()
+    if len(individuals) == 1:
+        logger.warning(
+            "Multi-animal DLC output with a single individual "
+            f"({individuals[0]!r}); dropping the 'individuals' level to match "
+            "the single-animal layout."
+        )
+        return df.droplevel("individuals", axis=1)
+
+    logger.warning(
+        f"Multi-animal DLC output with {len(individuals)} individuals "
+        f"({individuals}). Spyglass position tracks one animal per entry and "
+        "will not choose for you -- the frame is passed through unchanged, so "
+        "a downstream step will fail. Re-run inference with max_individuals=1 "
+        "for a usable result."
+    )
+    return df
+
+
 def parse_dlc_h5_output(
     h5_path: Union[Path, str],
     bodyparts: Optional[list[str]] = None,
     likelihood_thresh: Optional[float] = None,
     return_metadata: bool = True,
+    allow_multi_animal: bool = False,
 ) -> Union[pd.DataFrame, Tuple[pd.DataFrame, str, list]]:
     """Standardized DLC H5/CSV parsing for V1/V2 pipelines.
 
@@ -46,6 +127,13 @@ def parse_dlc_h5_output(
     return_metadata : bool, optional
         If True, return (df, scorer, bodyparts) tuple.
         If False, return just DataFrame. Default True.
+    allow_multi_animal : bool, optional
+        Accept DLC multi-animal output, which carries an extra ``individuals``
+        column level. Default False -- Spyglass position is built for
+        single-animal tracking, so the guard is on unless a caller opts out.
+        With one individual the level is squeezed and everything downstream is
+        unchanged; with several the frame is passed through **as-is** and later
+        stages will fail. See :func:`squeeze_individuals`.
 
     Returns
     -------
@@ -95,11 +183,7 @@ def parse_dlc_h5_output(
         )
 
     # Validate MultiIndex structure (DLC standard: [scorer, bodypart, coords])
-    if not isinstance(df.columns, pd.MultiIndex) or df.columns.nlevels != 3:
-        raise ValueError(
-            f"Invalid DLC file structure. Expected 3-level MultiIndex columns "
-            f"[scorer, bodypart, coords], got {df.columns.nlevels} levels."
-        )
+    df = squeeze_individuals(df, allow_multi_animal=allow_multi_animal)
 
     # Extract metadata
     scorer = df.columns.get_level_values(0)[0]
@@ -271,7 +355,9 @@ def validate_dlc_file(h5_path: Union[Path, str]) -> bool:
         return False
 
 
-def validate_dlc_output_structure(df: pd.DataFrame) -> None:
+def validate_dlc_output_structure(
+    df: pd.DataFrame, allow_multi_animal: bool = False
+) -> None:
     """Validate that DataFrame has proper DLC MultiIndex column structure.
 
     Parameters
@@ -284,11 +370,9 @@ def validate_dlc_output_structure(df: pd.DataFrame) -> None:
     ValueError
         If DataFrame doesn't have expected MultiIndex structure
     """
-    if not isinstance(df.columns, pd.MultiIndex) or df.columns.nlevels != 3:
-        raise ValueError(
-            f"Invalid DLC structure. Expected 3-level MultiIndex columns "
-            f"[scorer, bodypart, coords], got {df.columns.nlevels if hasattr(df.columns, 'nlevels') else 'non-MultiIndex'} levels."
-        )
+    df = squeeze_individuals(df, allow_multi_animal=allow_multi_animal)
+    if df.columns.nlevels != 3:  # multi-animal, opted in -- names differ
+        return
 
     # Validate column level names
     expected_names = ["scorer", "bodypart", "coords"]

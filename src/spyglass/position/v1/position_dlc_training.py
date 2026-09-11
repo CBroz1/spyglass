@@ -9,6 +9,7 @@ from spyglass.position.utils import (
     test_mode_suppress,
 )
 from spyglass.position.utils.general import file_log
+from spyglass.position.v1.dlc_utils import warn_if_dlc3
 from spyglass.position.v1.position_dlc_project import DLCProject
 from spyglass.settings import test_mode
 from spyglass.utils import SpyglassMixin, logger
@@ -129,6 +130,7 @@ class DLCModelTraining(SpyglassMixin, dj.Computed):
 
     def make_fetch(self, key):
         """Launch training for each entry in DLCModelTrainingSelection."""
+        warn_if_dlc3()
         config_path = (DLCProject & key).fetch1("config_path")
         self.log_path = Path(config_path).parent / "log.log"
         return self._logged_make_fetch(key)

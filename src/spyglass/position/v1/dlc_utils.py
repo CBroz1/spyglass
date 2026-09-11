@@ -47,9 +47,12 @@ def warn_if_dlc3():
         from packaging import version
 
         dlc_version = deeplabcut.__version__
-        if version.parse(dlc_version) < version.parse("3.0.0"):
+        # Compare the major component, not against Version("3.0.0"): a release
+        # candidate sorts *below* its own release, so `3.0.0rc14 >= 3.0.0` is
+        # False -- and rc builds are exactly what users have in the wild.
+        if version.parse(dlc_version).major < 3:
             return
-    except (ImportError, AttributeError, ValueError):
+    except (ImportError, AttributeError, TypeError, ValueError):
         return  # no DLC, or an unparsable version -- nothing to warn about
 
     _DLC3_WARNED = True

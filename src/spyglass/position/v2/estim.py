@@ -1054,8 +1054,14 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         task_mode = fetched["task_mode"]
         output_dir = fetched["output_dir"]
         tool = fetched["tool"]
-        inference_params = fetched["inference_params"]
+        inference_params = dict(fetched["inference_params"])
         video_paths = fetched["video_paths"]
+
+        # Consumed by the parser, not by the tool: pop it so it is never
+        # forwarded into analyze_videos as an unknown kwarg.
+        allow_multi_animal = bool(
+            inference_params.pop("allow_multi_animal", False)
+        )
 
         self._logger.debug(
             "PoseEstim.make_compute: "
@@ -1145,9 +1151,13 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         )
         self._info_msg(f"Loading {tool} output: {primary_output_file}")
 
-        # Load pose data using tool-specific loader
+        # Load pose data using tool-specific loader. Multi-animal output is
+        # rejected unless the user opted in via inference params -- Spyglass
+        # position derives one centroid/orientation per entry.
         pose_df, scorer, bodyparts = self._load_pose_data(
-            tool, primary_output_file
+            tool,
+            primary_output_file,
+            allow_multi_animal=allow_multi_animal,
         )
 
         # Single boundary: reconcile tool-native names with the canonical
@@ -1263,7 +1273,9 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             output_file_info=output_file_info,
         )
 
-    def _load_pose_data(self, tool: str, output_file: str):
+    def _load_pose_data(
+        self, tool: str, output_file: str, allow_multi_animal: bool = False
+    ):
         """Load pose data using tool-specific loaders.
 
         Parameters
@@ -1272,6 +1284,11 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             Tool name (e.g., 'DLC', 'SLEAP')
         output_file : str
             Path to output file
+        allow_multi_animal : bool, optional
+            Accept DLC multi-animal output (an extra ``individuals`` column
+            level, as every SuperAnimal / Model Zoo model emits). Default False.
+            Carried from ``PoseEstimParams``; see
+            :func:`~spyglass.position.utils.dlc_io.squeeze_individuals`.
 
         Returns
         -------
@@ -1281,7 +1298,11 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             format expected by the rest of the pipeline.
         """
         if tool == "DLC":
-            return parse_dlc_h5_output(output_file, return_metadata=True)
+            return parse_dlc_h5_output(
+                output_file,
+                return_metadata=True,
+                allow_multi_animal=allow_multi_animal,
+            )
         elif tool == "SLEAP":
             df_2level, scorer, bodyparts = parse_sleap_analysis_h5(
                 output_file, return_metadata=True
