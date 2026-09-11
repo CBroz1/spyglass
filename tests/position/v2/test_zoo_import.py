@@ -193,12 +193,25 @@ class TestModelName:
         """Back-compat: pre-existing rows must survive the migration."""
         assert pv2_train.Model().heading.attributes["model_name"].nullable
 
-    def test_populated_from_task_on_import(self, stub_model, pv2_train):
-        """Project imports default the name to the DLC `Task`."""
-        name = (pv2_train.Model & {"model_id": stub_model["model_id"]}).fetch1(
-            "model_name"
-        )
-        assert name
+    def test_populated_from_task_on_import(
+        self,
+        pv2_train,
+        dlc_project_config,
+        dlc_bootstrapped_session,
+        skip_if_no_dlc,
+    ):
+        """Project imports default the name to the DLC `Task`.
+
+        Exercises a real `Model.load`; `stub_model` is a direct insert and
+        would only prove the column default.
+        """
+        import yaml
+
+        task = yaml.safe_load(pathlib.Path(dlc_project_config).read_text())[
+            "Task"
+        ]
+        key = pv2_train.Model().load(dlc_project_config)
+        assert (pv2_train.Model & key).fetch1("model_name") == task
 
 
 class TestTrainingMode:
@@ -217,11 +230,34 @@ class TestTrainingMode:
         for value in ("resumable", "weights_only", "inference_only"):
             assert value in attr.type
 
-    def test_locally_trained_model_is_resumable(self, stub_model, pv2_train):
+    def test_defaults_to_resumable(self, stub_model, pv2_train):
+        """A row inserted without the field is assumed locally trained.
+
+        That is the overwhelmingly common case -- `Model.make()` trains in
+        place. Import paths set it explicitly rather than relying on this.
+        """
         mode = (pv2_train.Model & {"model_id": stub_model["model_id"]}).fetch1(
             "training_mode"
         )
         assert mode == "resumable"
+
+    def test_project_without_snapshot_is_inference_only(
+        self, pv2_train, dlc_project_config, skip_if_no_dlc
+    ):
+        """Derivation, not the default: no `snapshot-*.pt` means no resume."""
+        import yaml
+
+        cfg = yaml.safe_load(pathlib.Path(dlc_project_config).read_text())
+        mode = pv2_train.Model()._project_training_mode(cfg, dlc_project_config)
+        assert mode == "inference_only"
+
+    def test_tensorflow_project_is_inference_only(self, pv2_train):
+        """DLC-TF continuation raises NotImplementedError -- say so up front."""
+        mode = pv2_train.Model()._project_training_mode(
+            {"engine": "tensorflow", "project_path": "/nonexistent"},
+            "/nonexistent/config.yaml",
+        )
+        assert mode == "inference_only"
 
 
 class TestLoadExternalVideos:
@@ -273,6 +309,37 @@ class TestLoadExternalVideos:
         ext = VidFileGroup.ExternalVideo & {"vid_group_id": gid}
         assert len(ext) == 1
         assert "pilot_scoping_unregistered" in ext.fetch1("path")
+
+    def test_external_model_is_still_usable_for_inference(
+        self,
+        pv2_train,
+        pv2_estim,
+        unregistered_project,
+        single_session_group,
+        skip_if_no_dlc,
+    ):
+        """The point of the feature: import without sessions, then *use* it.
+
+        The safety argument rests on inference never reading the model's
+        *training* group -- it reads only `model_path` / `tool` / params, and
+        resolves sessions from the **inference** group in
+        `PoseEstimSelection`. That was verified by reading the code; this
+        asserts it, so a future change cannot quietly couple them and strand
+        every externally-imported model.
+        """
+        key = pv2_train.Model().load(unregistered_project, external_videos=True)
+
+        sel = {
+            "model_id": key["model_id"],
+            "vid_group_id": single_session_group,  # registered, one session
+            "pose_estim_params_id": "default",
+        }
+        tbl = pv2_estim.PoseEstimSelection()
+        tbl.insert1({**sel, "task_mode": "load", "output_dir": ""})
+        try:
+            assert len(tbl & sel) == 1
+        finally:
+            (tbl & sel).super_delete(warn=False, safemode=False)
 
     def test_external_group_cannot_back_inference(
         self, pv2_train, unregistered_project, skip_if_no_dlc

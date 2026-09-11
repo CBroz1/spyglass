@@ -110,6 +110,35 @@ def resolve_backbone(dataset: str, model_name: Optional[str] = None) -> str:
     return model_name
 
 
+def backbone_framework(model_name: str) -> str:
+    """Engine backing a zoo backbone: ``'pytorch'`` or ``'tensorflow'``.
+
+    DLC routes by backbone -- ``dlcrnet`` is TensorFlow, the rest PyTorch --
+    and DLC-TF continuation is a documented won't-do in this project, so a
+    TF-backed zoo model can only ever be used for inference.
+
+    Falls back to ``'pytorch'`` for anything unlisted, matching DLC's own
+    default, rather than guessing the restrictive answer.
+    """
+    try:
+        import json
+
+        import deeplabcut
+
+        mapping = json.loads(
+            (
+                Path(deeplabcut.__file__).parent
+                / "modelzoo"
+                / "models_to_framework.json"
+            ).read_text()
+        )
+    except Exception:  # pragma: no cover - env dependent
+        logger.debug("models_to_framework.json unreadable; assuming pytorch")
+        mapping = {"dlcrnet": "tensorflow"}
+
+    return str(mapping.get(model_name, "pytorch")).lower()
+
+
 def snapshot_path(
     dataset: str, model_name: Optional[str] = None, download: bool = False
 ) -> Path:
