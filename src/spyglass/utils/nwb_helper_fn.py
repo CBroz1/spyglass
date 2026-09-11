@@ -1,7 +1,9 @@
 """NWB helper functions for finding processing modules and data interfaces."""
 
+import atexit
 import os
 import os.path
+from contextlib import suppress
 from itertools import groupby
 from pathlib import Path
 from typing import List, Union
@@ -204,10 +206,23 @@ def get_config(nwb_file_path: str, calling_table: str = None) -> dict:
 
 
 def close_nwb_files():
-    """Close all open NWB files."""
+    """Close all open NWB files.
+
+    Per-handle failures are suppressed so one bad handle cannot leave the
+    rest of the cache open.
+    """
     for io, _ in __open_nwb_files.values():
-        io.close()
+        with suppress(Exception):
+            io.close()
     __open_nwb_files.clear()
+
+
+# Left to garbage collection, these cached handles are finalized during
+# interpreter teardown, where HDMFIO.__del__ -> close() -> h5py can no
+# longer import ("sys.meta_path is None, Python is likely shutting down").
+# atexit runs before teardown, so closing here avoids that. Registered at
+# import, so LIFO ordering puts it after other cleanup handlers.
+atexit.register(close_nwb_files)
 
 
 def get_data_interface(nwbfile, data_interface_name, data_interface_class=None):
@@ -414,7 +429,7 @@ def get_valid_intervals(
 
     if total_time < min_valid_len:
         half_total_time = total_time / 2
-        logger.warning(
+        logger.warn_msg(
             f"Setting minimum valid interval to {half_total_time:.4f}"
         )
         min_valid_len = half_total_time
@@ -659,34 +674,6 @@ def get_nwb_copy_filename(nwb_file_name):
         logger.warning(f"File may already be a copy: {nwb_file_name}")
 
     return f"{filename}_{file_extension}"
-
-
-def change_group_permissions(
-    subject_ids, set_group_name, analysis_dir="/stelmo/nwb/analysis"
-):
-    """Change group permissions for specified subject ids in analysis dir."""
-    from spyglass.common.common_usage import ActivityLog
-
-    ActivityLog().deprecate_log("change_group_permissions")
-
-    # Change to directory with analysis nwb files
-    os.chdir(analysis_dir)
-    # Get nwb file directories with specified subject ids
-    target_contents = [
-        x
-        for x in os.listdir(analysis_dir)
-        if any([subject_id in x.split("_")[0] for subject_id in subject_ids])
-    ]
-    # Loop through nwb file directories and change group permissions
-    for target_content in target_contents:
-        logger.info(
-            f"For {target_content}, changing group to {set_group_name} "
-            + "and giving read/write/execute permissions"
-        )
-        # Change group
-        os.system(f"chgrp -R {set_group_name} {target_content}")
-        # Give read, write, execute permissions to group
-        os.system(f"chmod -R g+rwx {target_content}")
 
 
 def is_nwb_obj_type(
