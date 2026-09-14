@@ -112,6 +112,27 @@ class TestZooCatalog:
         with pytest.raises(ValueError, match="superanimal"):
             zoo.default_backbone("superanimal_notathing")
 
+    def test_detector_defaults_per_dataset(self, zoo):
+        """PyTorch SuperAnimal inference is top-down and needs a detector.
+
+        `video_inference_superanimal` raises "You have to specify a
+        detector_name when using the Pytorch framework" without one -- found by
+        running it for real, not from the docs.
+        """
+        for dataset in ("superanimal_topviewmouse", "superanimal_quadruped"):
+            chosen = zoo.resolve_detector(dataset)
+            assert chosen in zoo.available_detectors(dataset)
+
+    def test_humanbody_has_no_detector(self, zoo):
+        """Bottom-up model: None is the right answer, not an error."""
+        if zoo.available_detectors("superanimal_humanbody"):
+            pytest.skip("catalog changed; humanbody now offers detectors")
+        assert zoo.resolve_detector("superanimal_humanbody") is None
+
+    def test_rejects_detector_not_offered(self, zoo):
+        with pytest.raises(ValueError, match="offers"):
+            zoo.resolve_detector("superanimal_topviewmouse", "ssdlite")
+
     def test_snapshot_path_does_not_download(self, zoo):
         """Deterministic path, so callers can check before committing ~646MB."""
         path = zoo.snapshot_path("superanimal_topviewmouse")
@@ -370,11 +391,25 @@ class TestLoadDispatch:
     need the download.
     """
 
-    def test_zoo_name_is_not_treated_as_a_path(self, pv2_train):
-        """A catalog name must not raise FileNotFoundError."""
-        with pytest.raises(Exception) as exc:
-            pv2_train.Model().load("superanimal_topviewmouse")
-        assert not isinstance(exc.value, FileNotFoundError)
+    def test_zoo_name_dispatches_without_importing(
+        self, pv2_train, monkeypatch
+    ):
+        """`load` routes a catalog name to the zoo path.
+
+        Stubs the import: a real one downloads a few hundred MB of weights,
+        which a dispatch test has no business doing.
+        """
+        seen = {}
+
+        def _fake(self, dataset, *args, **kwargs):
+            seen["dataset"] = dataset
+            return {"model_id": "zoo-stub"}
+
+        monkeypatch.setattr(pv2_train.Model, "load_from_dlc_zoo", _fake)
+        out = pv2_train.Model().load("superanimal_topviewmouse")
+
+        assert seen["dataset"] == "superanimal_topviewmouse"
+        assert out["model_id"] == "zoo-stub"
 
     def test_unknown_string_names_both_possibilities(self, pv2_train):
         """Neither a path nor a zoo entry -- say so, and list the catalog."""
@@ -408,20 +443,9 @@ class TestLoadDispatch:
         with pytest.raises(ValueError, match="superanimal"):
             pv2_train.Model().load_from_dlc_zoo("superanimal_notathing")
 
-    def test_backbone_defaults_per_dataset(self, pv2_train):
-        """Backbones differ by dataset -- no single hardcoded default works.
-
-        `superanimal_bird` offers only resnet_50; `superanimal_humanbody` only
-        rtmpose_x. Picking hrnet_w32 for all four fails for half the catalog.
-        """
-        from dlclibrary import get_available_models
-
-        for dataset in ZOO_MODELS:
-            chosen = pv2_train.Model()._zoo_default_backbone(dataset)
-            assert chosen in list(get_available_models(dataset))
-
     def test_rejects_backbone_not_offered(self, pv2_train):
-        with pytest.raises(ValueError, match="rtmpose_x|offers"):
+        """Validated before any download."""
+        with pytest.raises(ValueError, match="offers"):
             pv2_train.Model().load_from_dlc_zoo(
                 "superanimal_bird", model_name="hrnet_w32"
             )
@@ -504,3 +528,137 @@ class TestLoadDispatch:
         pv2_train.Model().load(
             "superanimal_topviewmouse", allow_redundant_model=True
         )
+
+
+class TestZooInferenceDispatch:
+    """Z10 — a zoo model routes to `video_inference_superanimal`.
+
+    `analyze_videos` needs a project (config + shuffle + trainingsetindex); a
+    zoo model is a bare checkpoint and has none. Stubbed throughout: real
+    inference needs weights *and* a GPU-minutes budget, and what matters here
+    is which function gets called with what.
+    """
+
+    @pytest.fixture
+    def runner(self, pv2_estim):
+        from spyglass.position.v2.utils.nwb_io import PoseInferenceRunner
+
+        return PoseInferenceRunner()
+
+    @pytest.fixture
+    def video(self, mock_video_file):
+        """A real file: `run_dlc_inference` validates videos before branching,
+        which is correct -- project and zoo paths both need a readable one."""
+        return str(mock_video_file)
+
+    @pytest.fixture
+    def capture_zoo(self, monkeypatch):
+        """Intercept DLC's zoo entry point and record its kwargs."""
+        import deeplabcut.modelzoo.video_inference as vi
+
+        seen = {}
+
+        def _fake(**kwargs):
+            seen.update(kwargs)
+            return "/tmp/out.h5"
+
+        monkeypatch.setattr(vi, "video_inference_superanimal", _fake)
+        return seen
+
+    def test_zoo_model_routes_to_superanimal(self, runner, capture_zoo, video):
+        out = runner.run_dlc_inference(
+            {
+                "model_path": "irrelevant.pt",
+                "superanimal_name": "superanimal_topviewmouse",
+                "zoo_backbone": "hrnet_w32",
+            },
+            video,
+            destfolder="/out",
+        )
+        assert out == "/tmp/out.h5"
+        assert capture_zoo["superanimal_name"] == "superanimal_topviewmouse"
+        assert capture_zoo["model_name"] == "hrnet_w32"
+
+    def test_passes_a_detector(self, runner, capture_zoo, video):
+        """Without one DLC refuses to run the PyTorch path at all."""
+        runner.run_dlc_inference(
+            {
+                "model_path": "x.pt",
+                "superanimal_name": "superanimal_topviewmouse",
+                "zoo_backbone": "hrnet_w32",
+            },
+            video,
+        )
+        from spyglass.position.v2.utils import fetch_dlc_zoo
+
+        assert capture_zoo[
+            "detector_name"
+        ] in fetch_dlc_zoo.available_detectors("superanimal_topviewmouse")
+
+    def test_defaults_to_one_individual(self, runner, capture_zoo, video):
+        """The scoping decision: zoo output is pinned single-animal.
+
+        SuperAnimal models are multi-animal by construction, so without this
+        every zoo result would carry an `individuals` level the pipeline
+        cannot use.
+        """
+        runner.run_dlc_inference(
+            {
+                "model_path": "x.pt",
+                "superanimal_name": "superanimal_topviewmouse",
+                "zoo_backbone": "hrnet_w32",
+            },
+            video,
+        )
+        assert capture_zoo["max_individuals"] == 1
+
+    def test_backbone_resolved_when_absent(self, runner, capture_zoo, video):
+        """A row predating `zoo_backbone` still resolves a valid backbone."""
+        runner.run_dlc_inference(
+            {
+                "model_path": "x.pt",
+                "superanimal_name": "superanimal_bird",
+                "zoo_backbone": None,
+            },
+            video,
+        )
+        from dlclibrary import get_available_models
+
+        assert capture_zoo["model_name"] in list(
+            get_available_models("superanimal_bird")
+        )
+
+    def test_more_individuals_warns(self, runner, capture_zoo, caplog, video):
+        """Opting out is allowed, loudly -- it will fail downstream.
+
+        Captured at DEBUG: `BaseMixin._warn_msg` demotes to debug under
+        `test_mode` to keep test output quiet, so a WARNING-level caplog would
+        silently miss it and the assertion would pass vacuously.
+        """
+        with caplog.at_level("DEBUG", logger="spyglass"):
+            runner.run_dlc_inference(
+                {
+                    "model_path": "x.pt",
+                    "superanimal_name": "superanimal_topviewmouse",
+                    "zoo_backbone": "hrnet_w32",
+                },
+                video,
+                max_individuals=5,
+            )
+        assert capture_zoo["max_individuals"] == 5
+        assert "one animal per entry" in caplog.text
+
+    def test_project_model_still_uses_analyze_videos(
+        self, runner, capture_zoo, tmp_path
+    ):
+        """Regression: a non-zoo model must not take the zoo branch."""
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("Task: t\n")
+        with pytest.raises(Exception) as exc:
+            runner.run_dlc_inference(
+                {"model_path": str(cfg), "superanimal_name": None},
+                str(tmp_path / "v.mp4"),
+            )
+        # Fails somewhere in the project path, never having called the zoo API
+        assert not capture_zoo
+        assert not isinstance(exc.value, AssertionError)

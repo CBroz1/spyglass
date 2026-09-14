@@ -110,6 +110,65 @@ def resolve_backbone(dataset: str, model_name: Optional[str] = None) -> str:
     return model_name
 
 
+def project_config(dataset: str) -> dict:
+    """Parsed project config DLC ships for *dataset*.
+
+    Supplies the bodyparts and skeleton edges for the imported ``Skeleton``.
+    Note ``video_sets`` is empty in these files -- DLC does not distribute the
+    training media -- which is why a zoo import records provenance rather than
+    ``VideoFile`` rows.
+    """
+    from deeplabcut.pose_estimation_pytorch.modelzoo.utils import (
+        get_super_animal_project_config_path,
+    )
+    from deeplabcut.utils.auxiliaryfunctions import read_plainconfig
+
+    resolve_backbone(dataset)  # validates the dataset name
+    return read_plainconfig(str(get_super_animal_project_config_path(dataset)))
+
+
+def available_detectors(dataset: str) -> List[str]:
+    """Detectors *dataset* offers, newest-first as dlclibrary lists them."""
+    try:
+        from dlclibrary import get_available_detectors
+    except ImportError:  # pragma: no cover - env dependent
+        return []
+    resolve_backbone(dataset)  # validates the dataset name
+    return list(get_available_detectors(dataset))
+
+
+def resolve_detector(
+    dataset: str, detector_name: Optional[str] = None
+) -> Optional[str]:
+    """Validate *detector_name*, or pick a default for *dataset*.
+
+    PyTorch SuperAnimal inference is top-down and **requires** a detector --
+    ``video_inference_superanimal`` raises "You have to specify a
+    detector_name when using the Pytorch framework" without one. The catalog
+    differs per dataset, and ``superanimal_humanbody`` offers none at all (it
+    is bottom-up), so None is a legitimate answer.
+
+    Returns
+    -------
+    str or None
+        None when the dataset has no detectors.
+
+    Raises
+    ------
+    ValueError
+        If *detector_name* is not one the dataset offers.
+    """
+    detectors = available_detectors(dataset)
+    if detector_name is None:
+        return detectors[0] if detectors else None
+    if detector_name not in detectors:
+        raise ValueError(
+            f"{dataset!r} has no detector {detector_name!r}; "
+            f"it offers {detectors or '(none -- bottom-up model)'}"
+        )
+    return detector_name
+
+
 def backbone_framework(model_name: str) -> str:
     """Engine backing a zoo backbone: ``'pytorch'`` or ``'tensorflow'``.
 

@@ -292,10 +292,17 @@ class TestBodyPartSource:
     """
 
     def test_source_column_exists_and_defaults_curated(self, bodypart):
-        """Existing curated rows must not be reclassified by the migration."""
+        """The seeded lab vocabulary stays `curated` after the migration.
+
+        Scoped to the seed list on purpose: asserting *every* row is curated
+        would be a global claim about a shared table, and fails as soon as any
+        test in the session imports a model that registers `imported` parts.
+        """
         assert "source" in bodypart.heading.names
-        sources = set(bodypart.fetch("source"))
-        assert sources == {"curated"}
+
+        seeded = bodypart & [{"bodypart": bp} for bp in bodypart._curated]
+        assert len(seeded) == len(bodypart._curated)
+        assert set(seeded.fetch("source")) == {"curated"}
 
     def test_validation_ignores_imported_parts(self, bodypart, skeleton):
         """The whole point: a zoo-only name stays invalid for user projects."""
