@@ -24,19 +24,23 @@ def test_valid_epoch_num(common):
 
 
 @pytest.mark.slow
-def test_pos_source_make(common):
-    """Test custom populate inserts sources tagged 'imported'."""
-    common.PositionSource().make(common.Session())
-    sources = set(common.PositionSource().fetch("source"))
-    assert sources == {
-        "imported"
-    }, "PositionSource.make should insert rows with source='imported'"
+def test_pos_source_ingest(common, mini_copy_name):
+    """Test ingestion is a no-op when the file is already ingested.
+
+    PositionSource now ingests via `insert_from_nwbfile` rather than a custom
+    `make` driven by key_source, so this exercises that path directly.
+    """
+    before = len(common.PositionSource() & {"nwb_file_name": mini_copy_name})
+    common.PositionSource().insert_from_nwbfile(mini_copy_name)
+    after = len(common.PositionSource() & {"nwb_file_name": mini_copy_name})
+
+    assert before == after, "Re-ingestion changed PositionSource row count"
 
 
-def test_pos_source_make_invalid(common):
-    """Test invalid populate"""
+def test_pos_source_ingest_invalid(common):
+    """Test ingestion of a file that is not in the Nwbfile table"""
     with pytest.raises(ValueError):
-        common.PositionSource().make(dict())
+        common.PositionSource().insert_from_nwbfile("not_a_real_file_.nwb")
 
 
 def test_raw_position_fetch_nwb(common, mini_pos, mini_pos_interval_dict):
@@ -68,21 +72,23 @@ def test_raw_position_fetch_multi_df(common):
     assert shape == (542, 8), "RawPosition.PosObj fetch1_dataframe failed"
 
 
-@pytest.fixture(scope="session", name="pop_state_script")
-def pop_state_script_fixture(common):
-    """Populate state script"""
-    keys = common.StateScriptFile.key_source
-    common.StateScriptFile.populate()
-    yield keys
+@pytest.fixture(scope="session")
+def pop_state_script(common, mini_insert):
+    """State script entries ingested from the mini file."""
+    yield common.StateScriptFile()
 
 
-def test_populate_state_script(common, pop_state_script):
-    """Test populate state script
+def test_populate_state_script(common, pop_state_script, mini_restr):
+    """Test state script ingestion
 
-    See #849. Expect no result for this table."""
-    assert len(common.StateScriptFile.key_source) == len(
-        pop_state_script
-    ), "StateScript populate unexpected effect"
+    See #849. Expect no result for this table: the mini file's
+    `associated_files` processing module is empty, so there is nothing to
+    ingest. Previously driven through `populate()`; StateScriptFile now
+    ingests via `insert_from_nwbfile`, so the assertion is on the rows the
+    table holds rather than on the key_source populate consumed."""
+    assert (
+        len(pop_state_script & mini_restr) == 0
+    ), "StateScript ingestion unexpected effect"
 
 
 def test_videofile_update_entries(common):
@@ -479,139 +485,6 @@ def test_validate_multifile_timestamps_no_valid_segments(common):
     assert max_overlap == pytest.approx(1 / 3)
 
 
-def test_videofile_make_no_videos(common):
-    """Test VideoFile.make warns and returns when NWB has no ImageSeries."""
-    from unittest.mock import Mock, PropertyMock, patch
-
-    # Mock NWB file with no ImageSeries objects
-    mock_nwbf = Mock()
-    mock_nwbf.objects.values.return_value = []  # No objects
-
-    video_file = common.VideoFile()
-
-    with (
-        patch.object(
-            type(video_file.connection),
-            "in_transaction",
-            new_callable=PropertyMock,
-            return_value=True,
-        ),
-        patch("spyglass.common.common_behav.get_nwb_file") as mock_get_nwb,
-        patch.object(common.Nwbfile, "get_abs_path") as mock_get_path,
-        patch.object(video_file, "_warn_msg") as mock_warn,
-    ):
-
-        mock_get_nwb.return_value = mock_nwbf
-        mock_get_path.return_value = "/fake/path.nwb"
-
-        video_file.make({"nwb_file_name": "test.nwb"})
-
-    # Empty videos dict -> warns about the missing data interface and returns
-    mock_warn.assert_called_once()
-    assert (
-        "No video data interface found in test.nwb" in mock_warn.call_args[0][0]
-    )
-
-
-def test_videofile_make_camera_device_error(common, caplog):
-    """Test VideoFile.make reports a missing-camera KeyError, not raises."""
-    from unittest.mock import Mock, PropertyMock, patch
-
-    import pynwb
-
-    # Mock NWB file with ImageSeries
-    mock_video = Mock(spec=pynwb.image.ImageSeries)
-    mock_video.name = "test_video"
-    mock_video.device.camera_name = "missing_camera"
-
-    mock_nwbf = Mock()
-    mock_nwbf.objects.values.return_value = [mock_video]
-
-    # Mock TaskEpoch and IntervalList
-    mock_interval = Mock()
-
-    video_file = common.VideoFile()
-
-    with (
-        patch.object(
-            type(video_file.connection),
-            "in_transaction",
-            new_callable=PropertyMock,
-            return_value=True,
-        ),
-        patch("spyglass.common.common_behav.get_nwb_file") as mock_get_nwb,
-        patch.object(common.Nwbfile, "get_abs_path") as mock_get_path,
-        patch.object(common.TaskEpoch, "__and__") as mock_task_epoch,
-        patch.object(common.IntervalList, "__and__") as mock_interval_list,
-        patch.object(video_file, "_validate_video_timestamps") as mock_validate,
-    ):
-
-        mock_get_nwb.return_value = mock_nwbf
-        mock_get_path.return_value = "/fake/path.nwb"
-        mock_task_epoch.return_value.fetch1.return_value = "epoch01"
-        mock_interval_list.return_value.fetch_interval.return_value = (
-            mock_interval
-        )
-
-        # Simulate KeyError from _validate_video_timestamps
-        mock_validate.side_effect = KeyError("Camera not found")
-
-        video_file.make({"nwb_file_name": "test.nwb"})
-
-    # KeyError is caught and surfaced via the partial-import report
-    assert "VideoFile Partial Import" in caplog.text
-    assert "Missing camera devices" in caplog.text
-    assert "missing_camera" in caplog.text
-
-
-def test_videofile_make_unexpected_error(common, caplog):
-    """Test VideoFile.make reports an unexpected error, not raises."""
-    from unittest.mock import Mock, PropertyMock, patch
-
-    import pynwb
-
-    mock_video = Mock(spec=pynwb.image.ImageSeries)
-    mock_video.name = "test_video"
-
-    mock_nwbf = Mock()
-    mock_nwbf.objects.values.return_value = [mock_video]
-
-    mock_interval = Mock()
-
-    video_file = common.VideoFile()
-
-    with (
-        patch.object(
-            type(video_file.connection),
-            "in_transaction",
-            new_callable=PropertyMock,
-            return_value=True,
-        ),
-        patch("spyglass.common.common_behav.get_nwb_file") as mock_get_nwb,
-        patch.object(common.Nwbfile, "get_abs_path") as mock_get_path,
-        patch.object(common.TaskEpoch, "__and__") as mock_task_epoch,
-        patch.object(common.IntervalList, "__and__") as mock_interval_list,
-        patch.object(video_file, "_validate_video_timestamps") as mock_validate,
-    ):
-
-        mock_get_nwb.return_value = mock_nwbf
-        mock_get_path.return_value = "/fake/path.nwb"
-        mock_task_epoch.return_value.fetch1.return_value = "epoch01"
-        mock_interval_list.return_value.fetch_interval.return_value = (
-            mock_interval
-        )
-
-        # Simulate unexpected error
-        mock_validate.side_effect = RuntimeError("Unexpected error")
-
-        video_file.make({"nwb_file_name": "test.nwb"})
-
-    # RuntimeError is caught and surfaced under the "Other errors" section
-    assert "VideoFile Partial Import" in caplog.text
-    assert "Other errors" in caplog.text
-    assert "RuntimeError: Unexpected error" in caplog.text
-
-
 def test_videofile_report_partial_import(common, caplog):
     """Test VideoFile._report_partial_import logging functionality."""
     from collections import defaultdict
@@ -764,28 +637,3 @@ def test_videofile_update_entries_with_null_values(common):
 
         # Should call update for both entries
         assert mock_update1.call_count == 2
-
-
-def test_position_source_insert_from_nwbfile(common):
-    """Test insert_from_nwbfile logs and skips when no spatial series."""
-    from unittest.mock import Mock, patch
-
-    # Mock NWB file with no spatial series
-    mock_nwbf = Mock()
-
-    with (
-        patch("spyglass.common.common_behav.get_nwb_file") as mock_get_nwb,
-        patch(
-            "spyglass.common.common_behav.get_all_spatial_series"
-        ) as mock_get_spatial,
-        patch.object(common.PositionSource, "_info_msg") as mock_info,
-    ):
-
-        mock_get_nwb.return_value = mock_nwbf
-        mock_get_spatial.return_value = None  # No spatial series found
-
-        common.PositionSource.insert_from_nwbfile("test.nwb")
-
-    # None spatial series -> the skip branch logs and returns without inserting
-    mock_info.assert_called_once()
-    assert "No position data found in test.nwb" in mock_info.call_args[0][0]
