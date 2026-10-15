@@ -1,5 +1,6 @@
 """Tests for pose estimation tool strategies."""
 
+from pathlib import Path
 from typing import Any, Dict, List, Set
 
 import pytest
@@ -140,6 +141,83 @@ class TestSLEAPStrategy:
             strategy.validate_params(params)
 
 
+class TestSLEAPOutputDiscovery:
+    """Each video must resolve to its own output file.
+
+    The globs were unanchored, so with several videos sharing one output
+    directory every video matched every file and the newest-of-matches
+    tiebreak returned the same result for all of them.
+    """
+
+    @pytest.fixture
+    def strategy(self, SLEAPStrategy):
+        return SLEAPStrategy()
+
+    @staticmethod
+    def _write(out_dir, names):
+        """Create files in mtime order, oldest first."""
+        import os
+
+        for i, name in enumerate(names):
+            p = out_dir / name
+            p.touch()
+            os.utime(p, (1_600_000_000 + i, 1_600_000_000 + i))
+
+    def test_each_video_gets_its_own_analysis_h5(self, strategy, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        # vidB's file is newest, so an unanchored glob returns it for both.
+        self._write(out, ["vidA.analysis.h5", "vidB.analysis.h5"])
+
+        found = strategy.find_output_files(
+            [str(tmp_path / "vidA.mp4"), str(tmp_path / "vidB.mp4")],
+            output_dir=str(out),
+        )
+
+        assert [Path(f).name for f in found] == [
+            "vidA.analysis.h5",
+            "vidB.analysis.h5",
+        ]
+
+    def test_each_video_gets_its_own_slp_fallback(self, strategy, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        self._write(out, ["vidA.predictions.slp", "vidB.predictions.slp"])
+
+        found = strategy.find_output_files(
+            [str(tmp_path / "vidA.mp4"), str(tmp_path / "vidB.mp4")],
+            output_dir=str(out),
+        )
+
+        assert [Path(f).name for f in found] == [
+            "vidA.predictions.slp",
+            "vidB.predictions.slp",
+        ]
+
+    def test_analysis_h5_preferred_over_slp(self, strategy, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        # .slp written later, so preference must not be decided by mtime.
+        self._write(out, ["vidA.analysis.h5", "vidA.predictions.slp"])
+
+        found = strategy.find_output_files(
+            [str(tmp_path / "vidA.mp4")], output_dir=str(out)
+        )
+
+        assert [Path(f).name for f in found] == ["vidA.analysis.h5"]
+
+    def test_video_without_output_is_skipped(self, strategy, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        self._write(out, ["vidA.analysis.h5"])
+
+        found = strategy.find_output_files(
+            [str(tmp_path / "vidB.mp4")], output_dir=str(out)
+        )
+
+        assert found == []
+
+
 class TestToolStrategyFactory:
     """Test ToolStrategyFactory."""
 
@@ -182,8 +260,8 @@ class TestToolStrategyFactory:
         assert strategy.source_software == "SLEAP"
         assert strategy.supports_training is True
         assert strategy.get_output_file_patterns() == {
-            "primary": "*.analysis.h5",
-            "fallback": "*.predictions.slp",
+            "primary": "{video_stem}*.analysis.h5",
+            "fallback": "{video_stem}*.predictions.slp",
         }
 
     def test_ndx_pose_is_not_a_strategy(self, factory):
