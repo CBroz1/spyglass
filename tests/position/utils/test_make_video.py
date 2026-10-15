@@ -110,6 +110,61 @@ class TestVideoMakerInit:
         assert np.array_equal(vm.bodypart_centroids["head"], np.zeros((10, 2)))
 
 
+class TestGenerateFrameWithoutLikelihoods:
+    """`likelihoods` is optional, so a frame must render without it.
+
+    Frame generation computed `len(list(self.likelihoods.values())[0])`
+    unconditionally, raising AttributeError on the default `likelihoods=None`
+    and blocking position/orientation-only overlays.
+    """
+
+    def _prepared_vm(self, basic_args, frame_ind=3):
+        """A VideoMaker with the plot objects `_set_plot_bases` would build."""
+        vm = _make_vm(basic_args)
+
+        vm.video_frame_inds = np.arange(10)
+        vm.frame_rate = 30.0
+        vm.pad_len = 4
+        vm.axes = [MagicMock()]
+        vm.centroid_position_dot = MagicMock()
+        vm.centroid_plot_objs = {"head": MagicMock()}
+        vm.orientation_line = MagicMock()
+        vm.title = MagicMock()
+
+        vm.temp_dir.mkdir(parents=True, exist_ok=True)
+        (vm.temp_dir / f"orig_{frame_ind:04d}.png").touch()
+        return vm
+
+    def test_renders_with_likelihoods_none(self, basic_args):
+        vm = self._prepared_vm(basic_args)
+        assert vm.likelihoods is None
+
+        with (
+            patch("matplotlib.pyplot.imread", return_value=np.zeros((2, 2))),
+            patch("matplotlib.pyplot.cla"),
+        ):
+            assert vm._generate_single_frame(3) == 3
+
+        vm.centroid_position_dot.set_offsets.assert_called_once()
+        vm.orientation_line.set_data.assert_called_once()
+        vm.fig.savefig.assert_called_once()
+
+    def test_likelihood_artists_updated_when_given(self, basic_args):
+        """With likelihoods present the subplot is still driven."""
+        n = len(basic_args["position_time"])
+        args = {**basic_args, "likelihoods": {"head": np.ones(n)}}
+        vm = self._prepared_vm(args)
+        vm.likelihood_objs = {"head": MagicMock()}
+
+        with (
+            patch("matplotlib.pyplot.imread", return_value=np.zeros((2, 2))),
+            patch("matplotlib.pyplot.cla"),
+        ):
+            vm._generate_single_frame(3)
+
+        vm.likelihood_objs["head"].set_data.assert_called_once()
+
+
 class TestMakeVideoPassthrough:
     """Test make_video() compatibility wrapper."""
 
