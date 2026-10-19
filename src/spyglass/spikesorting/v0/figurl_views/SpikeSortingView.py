@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import datajoint as dj
 import kachery_cloud as kcl
 import spikeinterface as si
@@ -55,7 +57,7 @@ class SpikeSortingView(SpyglassMixin, dj.Computed):
         sorting: si.BaseSorting = si.load_extractor(sorting_path)
 
         with kcl.TemporaryDirectory() as tmpdir:
-            fname = f"{tmpdir}/spikesortingview.h5"
+            fname = str(Path(tmpdir) / "spikesortingview.h5")
             logger.info("Preparing spikesortingview data")
             prepare_spikesortingview_data(
                 recording=recording,

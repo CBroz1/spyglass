@@ -1,5 +1,4 @@
 import uuid
-from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import datajoint as dj
@@ -361,20 +360,20 @@ class MetricCuration(SpyglassMixin, dj.Computed):
             if waveform_params.pop("whiten"):
                 recording = sp.whiten(recording, dtype=np.float64)
 
-        waveforms_dir = temp_dir + "/" + str(key["metric_curation_id"])
-        wf_dir_obj = Path(waveforms_dir)
-        wf_dir_obj.mkdir(parents=True, exist_ok=True)
-        if not any(wf_dir_obj.iterdir()):  # if the directory is empty
+        waveforms_dir = temp_dir / str(key["metric_curation_id"])
+        waveforms_dir.mkdir(parents=True, exist_ok=True)
+        if not any(waveforms_dir.iterdir()):  # if the directory is empty
             overwrite = True
 
         if fetch_all:
             waveform_params["max_spikes_per_unit"] = None
-            waveforms_dir += "_all"
+            # Suffixes the dir NAME, so it is a sibling of the dir made above
+            waveforms_dir = waveforms_dir.with_name(waveforms_dir.name + "_all")
 
         # Extract non-sparse waveforms by default
         waveform_params.setdefault("sparse", False)
-        dir_empty = not Path(waveforms_dir).exists() or not any(
-            Path(waveforms_dir).iterdir()
+        dir_empty = not waveforms_dir.exists() or not any(
+            waveforms_dir.iterdir()
         )
 
         if overwrite or dir_empty:

@@ -102,7 +102,7 @@ def test_videofile_getabspath(common, video_keys):
     key = video_keys[0]
     path = common.VideoFile().get_abs_path(key)
     file_part = key["nwb_file_name"].split("2")[0] + "_0" + str(key["epoch"])
-    assert file_part in path, "VideoFile get_abs_path failed"
+    assert file_part in path.name, "VideoFile get_abs_path failed"
 
 
 @pytest.mark.skipif(not TEARDOWN, reason="No teardown: expect no change.")

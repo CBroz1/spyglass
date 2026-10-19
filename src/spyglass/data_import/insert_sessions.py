@@ -1,4 +1,3 @@
-import os
 import stat
 import warnings
 from pathlib import Path
@@ -11,6 +10,7 @@ from spyglass.common.common_nwbfile import schema as nwbfile_schema
 from spyglass.settings import debug_mode, raw_dir, test_mode
 from spyglass.utils import logger
 from spyglass.utils.nwb_helper_fn import get_nwb_copy_filename
+from spyglass.utils.path_helper_fn import safe_chmod
 
 
 def insert_sessions(
@@ -49,17 +49,12 @@ def insert_sessions(
     results = []
 
     for nwb_file_name in nwb_file_names:
-        nwb_file_name = str(nwb_file_name)  # in case it's a Path object
+        nwb_file_name = Path(nwb_file_name).name  # may arrive as a path
 
-        if "/" in nwb_file_name:
-            nwb_file_name = nwb_file_name.split("/")[-1]
-
-        nwb_file_abs_path = Path(
-            Nwbfile.get_abs_path(nwb_file_name, new_file=True)
-        )
+        nwb_file_abs_path = Nwbfile.get_abs_path(nwb_file_name, new_file=True)
 
         if not nwb_file_abs_path.exists():
-            possible_matches = sorted(Path(raw_dir).glob(f"*{nwb_file_name}*"))
+            possible_matches = sorted(raw_dir.glob(f"*{nwb_file_name}*"))
 
             if len(possible_matches) == 1:
                 nwb_file_abs_path = possible_matches[0]
@@ -135,14 +130,14 @@ def copy_nwb_link_raw_ephys(
 
     nwb_file_abs_path = Nwbfile.get_abs_path(nwb_file_name, new_file=True)
 
-    if not os.path.exists(nwb_file_abs_path):
+    if not nwb_file_abs_path.exists():
         raise FileNotFoundError(f"Could not find raw file: {nwb_file_abs_path}")
 
     out_nwb_file_abs_path = Nwbfile.get_abs_path(
         out_nwb_file_name, new_file=True
     )
 
-    if os.path.exists(out_nwb_file_abs_path):
+    if out_nwb_file_abs_path.exists():
         if debug_mode or keep_existing:
             return out_nwb_file_abs_path
         if not test_mode:
@@ -199,6 +194,6 @@ def copy_nwb_link_raw_ephys(
 
     # change the permissions to only allow owner to write
     permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
-    os.chmod(out_nwb_file_abs_path, permissions)
+    safe_chmod(out_nwb_file_abs_path, permissions)
 
     return out_nwb_file_abs_path

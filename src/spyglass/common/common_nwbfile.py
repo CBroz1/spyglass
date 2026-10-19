@@ -1,7 +1,7 @@
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Union
 
 import datajoint as dj
 import h5py
@@ -79,7 +79,7 @@ class Nwbfile(SpyglassMixin, dj.Manual):
         """
         nwb_file_abs_path = Nwbfile.get_abs_path(nwb_file_name, new_file=True)
 
-        if not Path(nwb_file_abs_path).exists():
+        if not nwb_file_abs_path.exists():
             raise FileNotFoundError(f"File not found: {nwb_file_abs_path}")
 
         cls.insert1(
@@ -98,7 +98,7 @@ class Nwbfile(SpyglassMixin, dj.Manual):
     @classmethod
     def get_abs_path(
         cls, nwb_file_name: str, new_file: bool = False, **kwargs
-    ) -> str:
+    ) -> Path:
         """Return absolute path for a stored raw NWB file given file name.
 
         The SPYGLASS_BASE_DIR must be set, either as an environment or part of
@@ -114,10 +114,10 @@ class Nwbfile(SpyglassMixin, dj.Manual):
 
         Returns
         -------
-        nwb_file_abspath : str
+        nwb_file_abspath : Path
             The absolute path for the given file name.
         """
-        file_path = raw_dir + "/" + nwb_file_name
+        file_path = raw_dir / nwb_file_name
         if new_file:
             return file_path
 

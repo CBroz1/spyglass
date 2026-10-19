@@ -1,7 +1,9 @@
 from typing import List, Union
 
-import h5py
 import re
+from pathlib import Path
+
+import h5py
 
 from spyglass.utils.dj_helper_fn import _resolve_external_table
 from spyglass.utils.h5py_helper_fn import (
@@ -41,7 +43,7 @@ def update_analysis_for_dandi_standard(
     LabMember().check_admin_privilege(
         error_message="Admin permissions required to edit existing analysis files"
     )
-    file_name = filepath.split("/")[-1]
+    file_name = Path(filepath).name
     # edit the file
     try:
         with h5py.File(filepath, "a") as file:

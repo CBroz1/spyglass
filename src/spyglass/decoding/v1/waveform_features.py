@@ -1,4 +1,3 @@
-import os
 from itertools import chain
 
 import datajoint as dj
@@ -206,8 +205,8 @@ class UnitWaveformFeatures(SpyglassMixin, dj.Computed):
         # get the sorting from the parent table
         sorting = SpikeSortingOutput().get_sorting(merge_key)
 
-        waveforms_temp_dir = temp_dir + "/" + str(merge_key["merge_id"])
-        os.makedirs(waveforms_temp_dir, exist_ok=True)
+        waveforms_temp_dir = temp_dir / str(merge_key["merge_id"])
+        waveforms_temp_dir.mkdir(parents=True, exist_ok=True)
 
         return si.extract_waveforms(
             recording=recording,

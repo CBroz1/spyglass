@@ -405,6 +405,6 @@ def test_custom_analysis_in_export(gen_export_selection, populate_export):
 
     # Check that our custom file's path appears in export
     custom_abs_path = custom_table.get_abs_path(custom_file)
-    assert any(
-        custom_abs_path in fp for fp in file_paths
+    assert str(custom_abs_path) in set(
+        file_paths
     ), f"Custom file {custom_abs_path} not in export files"

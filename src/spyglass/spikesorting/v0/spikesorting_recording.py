@@ -436,9 +436,8 @@ class SpikeSortingRecording(SpyglassMixin, dj.Computed):
             folder=rec_path, chunk_duration="10000ms", n_jobs=8, verbose=False
         )
 
-        # Verify only a rebuild of the canonical directory. `recording_dir` is
-        # a str, so this must compare Path to Path or the check never runs.
-        if has_entry and base_dir == Path(recording_dir):  # recompute
+        # Verify only a rebuild of the canonical directory.
+        if has_entry and base_dir == recording_dir:  # recompute
             _ = self._hash_check(key, rec_path)
 
         return {**ret, "hash": self._dir_hash(rec_path, return_hasher)}

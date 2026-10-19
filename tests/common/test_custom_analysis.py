@@ -186,8 +186,8 @@ class TestFileOperations:
         abs_path = custom_analysis_table.get_abs_path(temp_analysis_file)
 
         assert abs_path is not None
-        assert Path(abs_path).exists()
-        assert abs_path.endswith(".nwb")
+        assert abs_path.exists()
+        assert abs_path.suffix == ".nwb"
 
     def test_add_to_database(
         self,

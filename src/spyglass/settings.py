@@ -9,8 +9,35 @@ from pymysql.err import OperationalError
 
 from spyglass.utils.dj_helper_fn import str_to_bool
 from spyglass.utils.logging import logger
+from spyglass.utils.path_helper_fn import as_path, is_within
 
 _UNSET = object()  # distinguishes "not supplied" from an explicit False
+
+
+def _as_str(value) -> str | None:
+    """None-preserving ``str`` for the dj.config boundary.
+
+    Directory values are ``Path`` objects internally, but dj.config is written
+    to JSON and read by DataJoint, neither of which accepts a ``Path``.
+    """
+    return None if value is None else str(value)
+
+
+def _dlc_base_from_project(project_path) -> Path | None:
+    """Derive the DLC base from a project path by trimming at ``projects``.
+
+    DLC lays out its work as ``<base>/projects/<project>``, so the base is the
+    ancestor of the ``projects`` component. A path with no such component is
+    taken to be the base itself.
+    """
+    if not project_path:
+        return None
+
+    path = as_path(project_path)
+    if "projects" not in path.parts:
+        return path
+
+    return Path(*path.parts[: path.parts.index("projects")])
 
 
 class SpyglassConfig:
@@ -320,27 +347,26 @@ class SpyglassConfig:
                 )
             return
 
-        base_path = Path(resolved_base).expanduser().resolve()
-        resolved_base = str(base_path)
+        base_path = as_path(resolved_base).resolve()
 
         def env_or_none(var: str) -> str | None:
             """Read an env var, ignored in test_mode to keep the sandbox."""
             return None if test_mode else os.environ.get(var)
 
         dlc_project = env_or_none("DLC_PROJECT_PATH")
-        dlc_base = (
+        dlc_base = as_path(
             dj_dlc.get("base")
             or env_or_none("DLC_BASE_DIR")
-            or (dlc_project.split("projects")[0] if dlc_project else None)
-            or str(Path(resolved_base) / "deeplabcut")
+            or _dlc_base_from_project(dlc_project)
+            or base_path / "deeplabcut"
         )
-        moseq_base = (
+        moseq_base = as_path(
             dj_moseq.get("base")
             or env_or_none("MOSEQ_BASE_DIR")
-            or str(Path(resolved_base) / "moseq")
+            or base_path / "moseq"
         )
 
-        config_dirs = {"SPYGLASS_BASE_DIR": str(resolved_base)}
+        config_dirs = {"SPYGLASS_BASE_DIR": base_path}
         source_config_lookup = {
             "dlc": dj_dlc,
             "moseq": dj_moseq,
@@ -348,7 +374,7 @@ class SpyglassConfig:
         }
         base_lookup = {"dlc": dlc_base, "moseq": moseq_base}
         for prefix, dirs in self.relative_dirs.items():
-            this_base = base_lookup.get(prefix, resolved_base)
+            this_base = base_lookup.get(prefix, base_path)
             for dir, dir_str in dirs.items():
                 dir_env_fmt = self.dir_to_var(dir=dir, dir_type=prefix)
 
@@ -359,12 +385,12 @@ class SpyglassConfig:
                 )
                 source_config = source_config_lookup.get(prefix, dj_spyglass)
                 dir_location = (
-                    source_config.get(dir)
-                    or env_loc
-                    or str(Path(this_base) / dir_str)
-                ).replace('"', "")
+                    source_config.get(dir) or env_loc or this_base / dir_str
+                )
+                # Quotes survive shell export of a path containing spaces.
+                dir_location = str(dir_location).replace('"', "")
 
-                config_dirs.update({dir_env_fmt: str(dir_location)})
+                config_dirs.update({dir_env_fmt: as_path(dir_location)})
 
         kachery_zone_dict = {
             "KACHERY_ZONE": (
@@ -383,7 +409,7 @@ class SpyglassConfig:
             if "tests" not in base_path.parts:
                 validation_error = (
                     f"Refusing to load Spyglass in test_mode with base_dir "
-                    f"{resolved_base!r}: path does not contain a 'tests' "
+                    f"{str(base_path)!r}: path does not contain a 'tests' "
                     "component. Run pytest with --base-dir pointing inside a "
                     "tests/ directory (default: ./tests/_data/) to keep "
                     "destructive operations off shared/production storage."
@@ -397,12 +423,12 @@ class SpyglassConfig:
                 checked["DLC_BASE_DIR"] = dlc_base
                 checked["MOSEQ_BASE_DIR"] = moseq_base
                 for var, loc in checked.items():
-                    loc_path = Path(loc).expanduser().resolve()
-                    if not loc_path.is_relative_to(base_path):
+                    if not is_within(loc, base_path):
                         validation_error = (
                             f"Refusing to load Spyglass in test_mode: {var} "
-                            f"resolves to {str(loc_path)!r}, outside the test "
-                            f"base {resolved_base!r}. Destructive tests must "
+                            f"resolves to {str(as_path(loc).resolve())!r}, "
+                            "outside the test base "
+                            f"{str(base_path)!r}. Destructive tests must "
                             "stay within the test base directory; check "
                             "dj.config['custom'] and any directory symlinks."
                         )
@@ -432,8 +458,8 @@ class SpyglassConfig:
 
         if not debug_mode:
             base_path.mkdir(parents=True, exist_ok=True)
-        Path(self._dlc_base).mkdir(parents=True, exist_ok=True)
-        Path(self._moseq_base).mkdir(parents=True, exist_ok=True)
+        self._dlc_base.mkdir(parents=True, exist_ok=True)
+        self._moseq_base.mkdir(parents=True, exist_ok=True)
 
         loaded_env = self._load_env_vars()
         self._set_env_with_dict(
@@ -473,8 +499,8 @@ class SpyglassConfig:
     def _mkdirs_from_dict_vals(self, dir_dict) -> None:
         if self._debug_mode:
             return
-        for dir_str in dir_dict.values():
-            Path(dir_str).mkdir(parents=True, exist_ok=True)
+        for dir_path in dir_dict.values():
+            as_path(dir_path).mkdir(parents=True, exist_ok=True)
 
     def _set_dj_config_stores(self, check_match=True, set_stores=True) -> None:
         """
@@ -496,9 +522,9 @@ class SpyglassConfig:
             dj_stores = dj.config.get("stores", {})
             store_r = dj_stores.get("raw", {}).get("location")
             store_a = dj_stores.get("analysis", {}).get("location")
-            mismatch_raw = store_r and Path(store_r) != Path(self.raw_dir)
-            mismatch_analysis = store_a and Path(store_a) != Path(
-                self.analysis_dir
+            mismatch_raw = store_r and as_path(store_r) != self.raw_dir
+            mismatch_analysis = (
+                store_a and as_path(store_a) != self.analysis_dir
             )
 
         if set_stores:
@@ -672,17 +698,18 @@ class SpyglassConfig:
     @property
     def _dj_stores(self) -> dict:
         self.load_config()
+        raw, analysis = _as_str(self.raw_dir), _as_str(self.analysis_dir)
         return {
             "stores": {
                 "raw": {
                     "protocol": "file",
-                    "location": self.raw_dir,
-                    "stage": self.raw_dir,
+                    "location": raw,
+                    "stage": raw,
                 },
                 "analysis": {
                     "protocol": "file",
-                    "location": self.analysis_dir,
-                    "stage": self.analysis_dir,
+                    "location": analysis,
+                    "stage": analysis,
                 },
             }
         }
@@ -696,35 +723,37 @@ class SpyglassConfig:
                 "test_mode": str(self.test_mode).lower(),
                 "prefer_download": str(self._prefer_download).lower(),
                 "spyglass_dirs": {
-                    "base": self.base_dir,
-                    "raw": self.raw_dir,
-                    "analysis": self.analysis_dir,
-                    "recording": self.recording_dir,
-                    "sorting": self.sorting_dir,
-                    "waveforms": self.waveforms_dir,
-                    "temp": self.temp_dir,
-                    "video": self.video_dir,
-                    "export": self.export_dir,
+                    "base": _as_str(self.base_dir),
+                    "raw": _as_str(self.raw_dir),
+                    "analysis": _as_str(self.analysis_dir),
+                    "recording": _as_str(self.recording_dir),
+                    "sorting": _as_str(self.sorting_dir),
+                    "waveforms": _as_str(self.waveforms_dir),
+                    "temp": _as_str(self.temp_dir),
+                    "video": _as_str(self.video_dir),
+                    "export": _as_str(self.export_dir),
                 },
                 "kachery_dirs": {
-                    "cloud": self.config.get(
-                        self.dir_to_var("cloud", "kachery")
+                    "cloud": _as_str(
+                        self.config.get(self.dir_to_var("cloud", "kachery"))
                     ),
-                    "storage": self.config.get(
-                        self.dir_to_var("storage", "kachery")
+                    "storage": _as_str(
+                        self.config.get(self.dir_to_var("storage", "kachery"))
                     ),
-                    "temp": self.config.get(self.dir_to_var("temp", "kachery")),
+                    "temp": _as_str(
+                        self.config.get(self.dir_to_var("temp", "kachery"))
+                    ),
                 },
                 "dlc_dirs": {
-                    "base": self._dlc_base,
-                    "project": self.dlc_project_dir,
-                    "video": self.dlc_video_dir,
-                    "output": self.dlc_output_dir,
+                    "base": _as_str(self._dlc_base),
+                    "project": _as_str(self.dlc_project_dir),
+                    "video": _as_str(self.dlc_video_dir),
+                    "output": _as_str(self.dlc_output_dir),
                 },
                 "moseq_dirs": {
-                    "base": self._moseq_base,
-                    "project": self.moseq_project_dir,
-                    "video": self.moseq_video_dir,
+                    "base": _as_str(self._moseq_base),
+                    "project": _as_str(self.moseq_project_dir),
+                    "video": _as_str(self.moseq_video_dir),
                 },
                 "kachery_zone": os.environ.get(
                     "KACHERY_ZONE", "franklab.default"
@@ -739,48 +768,48 @@ class SpyglassConfig:
         return self._config
 
     @property
-    def base_dir(self) -> str:
-        """Base directory as a string."""
+    def base_dir(self) -> Path:
+        """Base directory."""
         return self.config.get(self.dir_to_var("base"))
 
     @property
-    def raw_dir(self) -> str:
-        """Raw data directory as a string."""
+    def raw_dir(self) -> Path:
+        """Raw data directory."""
         return self.config.get(self.dir_to_var("raw"))
 
     @property
-    def analysis_dir(self) -> str:
-        """Analysis directory as a string."""
+    def analysis_dir(self) -> Path:
+        """Analysis directory."""
         return self.config.get(self.dir_to_var("analysis"))
 
     @property
-    def recording_dir(self) -> str:
-        """Recording directory as a string."""
+    def recording_dir(self) -> Path:
+        """Recording directory."""
         return self.config.get(self.dir_to_var("recording"))
 
     @property
-    def sorting_dir(self) -> str:
-        """Sorting directory as a string."""
+    def sorting_dir(self) -> Path:
+        """Sorting directory."""
         return self.config.get(self.dir_to_var("sorting"))
 
     @property
-    def waveforms_dir(self) -> str:
-        """Waveforms directory as a string."""
+    def waveforms_dir(self) -> Path:
+        """Waveforms directory."""
         return self.config.get(self.dir_to_var("waveforms"))
 
     @property
-    def temp_dir(self) -> str:
-        """Temp directory as a string."""
+    def temp_dir(self) -> Path:
+        """Temp directory."""
         return self.config.get(self.dir_to_var("temp"))
 
     @property
-    def video_dir(self) -> str:
-        """Video directory as a string."""
+    def video_dir(self) -> Path:
+        """Video directory."""
         return self.config.get(self.dir_to_var("video"))
 
     @property
-    def export_dir(self) -> str:
-        """Export directory as a string."""
+    def export_dir(self) -> Path:
+        """Export directory."""
         return self.config.get(self.dir_to_var("export"))
 
     @property
@@ -839,28 +868,28 @@ class SpyglassConfig:
             self._config["prefer_download"] = self._prefer_download
 
     @property
-    def dlc_project_dir(self) -> str:
-        """DLC project directory as a string."""
+    def dlc_project_dir(self) -> Path:
+        """DLC project directory."""
         return self.config.get(self.dir_to_var("project", "dlc"))
 
     @property
-    def dlc_video_dir(self) -> str:
-        """DLC video directory as a string."""
+    def dlc_video_dir(self) -> Path:
+        """DLC video directory."""
         return self.config.get(self.dir_to_var("video", "dlc"))
 
     @property
-    def dlc_output_dir(self) -> str:
-        """DLC output directory as a string."""
+    def dlc_output_dir(self) -> Path:
+        """DLC output directory."""
         return self.config.get(self.dir_to_var("output", "dlc"))
 
     @property
-    def moseq_project_dir(self) -> str:
-        """Moseq project directory as a string."""
+    def moseq_project_dir(self) -> Path:
+        """Moseq project directory."""
         return self.config.get(self.dir_to_var("project", "moseq"))
 
     @property
-    def moseq_video_dir(self) -> str:
-        """Moseq video directory as a string."""
+    def moseq_video_dir(self) -> Path:
+        """Moseq video directory."""
         return self.config.get(self.dir_to_var("video", "moseq"))
 
 

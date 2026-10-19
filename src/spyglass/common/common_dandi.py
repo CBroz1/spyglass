@@ -14,6 +14,7 @@ from tqdm import tqdm
 from spyglass.common.common_usage import Export, ExportSelection
 from spyglass.settings import export_dir, raw_dir
 from spyglass.utils import SpyglassMixin, logger
+from spyglass.utils.path_helper_fn import is_within, link_or_copy
 from spyglass.utils.sql_helper_fn import SQLDumpHelper
 
 try:
@@ -337,7 +338,8 @@ class DandiPath(SpyglassMixin, dj.Manual):
         # create a cache to save downloaded data to disk (optional)
         fsspec_file = CachingFileSystem(
             fs=fs,
-            cache_storage=f"{export_dir}/nwb-cache",  # Local folder for cache
+            # fsspec wants a string, not a Path
+            cache_storage=str(export_dir / "nwb-cache"),  # cache folder
         )
 
         # Open and return the file
@@ -383,15 +385,15 @@ class DandiPath(SpyglassMixin, dj.Manual):
 
         # make a temp dir with symbolic links to the export files
         source_files = (Export.File() & key).fetch("file_path")
-        paper_dir = f"{export_dir}/{paper_id}"
-        os.makedirs(paper_dir, exist_ok=True)
-        destination_dir = f"{paper_dir}/dandiset_{paper_id}"
-        dandiset_dir = f"{paper_dir}/{dandiset_id}"
+        paper_dir = export_dir / paper_id
+        paper_dir.mkdir(parents=True, exist_ok=True)
+        destination_dir = paper_dir / f"dandiset_{paper_id}"
+        dandiset_dir = paper_dir / dandiset_id
 
         # check if pre-existing directories for dandi export exist.
         # Remove if so to continue
         for dandi_dir in destination_dir, dandiset_dir:
-            if os.path.exists(dandi_dir):
+            if dandi_dir.exists():
                 if (
                     dj.utils.user_choice(
                         "Pre-existing dandi export dir exist."
@@ -406,7 +408,7 @@ class DandiPath(SpyglassMixin, dj.Manual):
                     "Directory must be removed prior to dandi export to ensure "
                     + f"dandi-compatability: {dandi_dir}"
                 )
-        os.makedirs(destination_dir, exist_ok=False)
+        destination_dir.mkdir(parents=True)
 
         logger.info(
             f"Compiling dandiset in {destination_dir} from {len(source_files)} files"
@@ -442,13 +444,13 @@ class DandiPath(SpyglassMixin, dj.Manual):
             f"{known_instances[dandi_instance].gui}"
             + f"/dandiset/{dandiset_id}/draft"
         )
-        dandi.download.download(url, output_dir=paper_dir)
+        dandi.download.download(url, output_dir=str(paper_dir))
 
         # organize the files in the dandiset directory
         logger.info("Organizing dandiset")
         dandi.organize.organize(
-            destination_dir,
-            dandiset_dir,
+            str(destination_dir),
+            str(dandiset_dir),
             update_external_file_paths=True,
             invalid=OrganizeInvalid.FAIL,
             media_files_mode=CopyMode.SYMLINK,
@@ -462,7 +464,7 @@ class DandiPath(SpyglassMixin, dj.Manual):
         if dandi_api_key:
             os.environ["DANDI_API_KEY"] = dandi_api_key
         dandi.upload.upload(
-            [dandiset_dir],
+            [str(dandiset_dir)],
             dandi_instance=dandi_instance,
             jobs=n_upload_processes,
             existing=UploadExisting.SKIP,
@@ -511,15 +513,18 @@ class DandiPath(SpyglassMixin, dj.Manual):
 
 
 def _make_file_in_dandi_dir(file, destination_dir, skip_raw_files):
-    if os.path.exists(f"{destination_dir}/{os.path.basename(file)}"):
+    source = Path(file)
+    destination = Path(destination_dir) / source.name
+
+    if destination.exists():
         return
-    if skip_raw_files and raw_dir in file:
+    if skip_raw_files and is_within(source, raw_dir):
         return
     # copy the file if it has external links so can be safely edited
-    if nwb_has_external_links(file):
-        shutil.copy(file, f"{destination_dir}/{os.path.basename(file)}")
+    if nwb_has_external_links(source):
+        shutil.copy(source, destination)
     else:
-        os.symlink(file, f"{destination_dir}/{os.path.basename(file)}")
+        link_or_copy(source, destination)
 
 
 def _get_metadata(path):

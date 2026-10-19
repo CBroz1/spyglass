@@ -836,7 +836,7 @@ class TestTestModeEnvVarIgnore:
             base_dir=str(test_base), test_mode=True, force_reload=True
         )
 
-        assert cfg.raw_dir == str(test_base / "raw")
+        assert cfg.raw_dir == test_base / "raw"
 
     def test_ignores_dlc_base_dir_env_var(self, monkeypatch, test_base):
         from spyglass.settings import SpyglassConfig
@@ -849,7 +849,7 @@ class TestTestModeEnvVarIgnore:
             base_dir=str(test_base), test_mode=True, force_reload=True
         )
 
-        assert cfg._dlc_base == str(test_base / "deeplabcut")
+        assert cfg._dlc_base == test_base / "deeplabcut"
 
     def test_ignores_dlc_project_path_env_var(self, monkeypatch, test_base):
         """DLC_PROJECT_PATH is the other env-var fallback for DLC base dir."""
@@ -864,7 +864,7 @@ class TestTestModeEnvVarIgnore:
             base_dir=str(test_base), test_mode=True, force_reload=True
         )
 
-        assert cfg._dlc_base == str(test_base / "deeplabcut")
+        assert cfg._dlc_base == test_base / "deeplabcut"
 
     def test_ignores_moseq_base_dir_env_var(self, monkeypatch, test_base):
         from spyglass.settings import SpyglassConfig
@@ -877,7 +877,7 @@ class TestTestModeEnvVarIgnore:
             base_dir=str(test_base), test_mode=True, force_reload=True
         )
 
-        assert cfg._moseq_base == str(test_base / "moseq")
+        assert cfg._moseq_base == test_base / "moseq"
 
     def test_ignores_kachery_zone_env_var(self, monkeypatch, test_base):
         from spyglass.settings import SpyglassConfig
@@ -994,7 +994,7 @@ class TestTestModeEnvVarIgnore:
             force_reload=True,
         )
         assert replacement.test_mode is requested_mode
-        assert replacement.analysis_dir == str(requested_base / "analysis")
+        assert replacement.analysis_dir == requested_base / "analysis"
 
     def test_force_reload_refreshes_paths_within_bound_mode(
         self, tmp_path, no_dj_test_config
@@ -1010,7 +1010,7 @@ class TestTestModeEnvVarIgnore:
         cfg.load_config(base_dir=str(second), test_mode=True, force_reload=True)
 
         assert cfg.test_mode
-        assert cfg.analysis_dir == str(second / "analysis")
+        assert cfg.analysis_dir == second / "analysis"
 
     def test_bound_mode_ignores_ambient_dj_mode_change(
         self, monkeypatch, tmp_path, no_dj_test_config
@@ -1024,7 +1024,7 @@ class TestTestModeEnvVarIgnore:
         monkeypatch.setenv("SPYGLASS_BASE_DIR", str(production))
         cfg = SpyglassConfig()
         cfg.load_config(force_reload=True)
-        assert cfg.analysis_dir == str(production / "analysis")
+        assert cfg.analysis_dir == production / "analysis"
 
         # Ambient configuration participates only before mode is bound.
         monkeypatch.setitem(
@@ -1034,7 +1034,7 @@ class TestTestModeEnvVarIgnore:
 
         assert not cfg.load_failed
         assert not cfg.test_mode
-        assert cfg.analysis_dir == str(production / "analysis")
+        assert cfg.analysis_dir == production / "analysis"
 
     def test_fresh_ambient_test_mode_startup_without_base_is_graceful(
         self, monkeypatch, no_dj_test_config
@@ -1281,7 +1281,7 @@ class TestTestModeSandboxContainment:
             )
 
         assert cfg._config == before, "refused reload mutated the config"
-        assert cfg.analysis_dir == str(good / "analysis")
+        assert cfg.analysis_dir == good / "analysis"
         assert not bad.exists()
 
     def test_valid_test_layout_is_accepted(self, tmp_path, no_dj_dirs):
@@ -1293,7 +1293,7 @@ class TestTestModeSandboxContainment:
 
         cfg = SpyglassConfig()
         cfg.load_config(base_dir=str(base), test_mode=True, force_reload=True)
-        assert cfg.analysis_dir == str(base / "analysis")
+        assert cfg.analysis_dir == base / "analysis"
 
     def test_production_mode_allows_dirs_outside_base(
         self, tmp_path, monkeypatch, no_dj_dirs
@@ -1311,4 +1311,4 @@ class TestTestModeSandboxContainment:
 
         cfg = SpyglassConfig()
         cfg.load_config(base_dir=str(base), test_mode=False, force_reload=True)
-        assert cfg.analysis_dir == str(outside)
+        assert cfg.analysis_dir == outside

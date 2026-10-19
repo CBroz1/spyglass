@@ -3,7 +3,6 @@
 import inspect
 import math
 import multiprocessing.pool
-import os
 import re
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Tuple, Type, Union
@@ -16,6 +15,7 @@ from datajoint.table import Table
 from datajoint.user_tables import TableMeta, UserTable
 from spyglass.utils.logging import logger
 from spyglass.utils.nwb_helper_fn import get_nwb_file
+from spyglass.utils.path_helper_fn import store_filepath
 
 # Tables that should be excluded from the undirected graph when finding paths
 # for TableChain objects and searching for an upstream key.
@@ -310,7 +310,7 @@ def _update_analysis_file_checksum(abs_path):
     abs_path = Path(abs_path)
     anwb = AnalysisNwbfile()
     rel_path = abs_path.relative_to(anwb._analysis_dir)
-    file_restr = f"filepath = '{str(rel_path)}'"
+    file_restr = f"filepath = '{store_filepath(rel_path)}'"
 
     found = False
     for ext_tbl in AnalysisRegistry().get_externals():
@@ -423,16 +423,15 @@ def make_file_obj_id_unique(nwb_path: str):
 
         ExportErrorLog().insert1(
             {
-                "file": nwb_path,
+                "file": str(nwb_path),  # varchar column, not a filepath store
                 "source": "make_file_obj_id_unique",
             },
             skip_duplicates=True,
         )
         return
-    location = "raw" if nwb_path.endswith("_.nwb") else "analysis"
-    _resolve_external_table(
-        nwb_path, nwb_path.split("/")[-1], location=location
-    )
+    nwb_name = Path(nwb_path).name
+    location = "raw" if nwb_name.endswith("_.nwb") else "analysis"
+    _resolve_external_table(nwb_path, nwb_name, location=location)
     return new_id
 
 
@@ -446,21 +445,21 @@ def _quick_get_analysis_path(file: str):
         Name of the analysis file to get the path for.
     Returns
     -------
-    str
+    Path
         Absolute path to the analysis file. Returns None if the file is not found locally.
     """
     from spyglass.common import AnalysisNwbfile
     from spyglass.settings import sg_config
 
     analysis_dir = sg_config.analysis_dir
-    if (path := Path(analysis_dir) / Path(file)).exists():
+    if (path := analysis_dir / file).exists():
         return path
 
     folder = "_".join(file.split("_")[:-1])
-    path = Path(analysis_dir) / Path(folder) / Path(file)
-    if os.path.exists(path):
+    path = analysis_dir / folder / file
+    if path.exists():
         return path
-    path = Path(AnalysisNwbfile().get_abs_path(file))
+    path = AnalysisNwbfile().get_abs_path(file)
     if path.exists():
         return path
 

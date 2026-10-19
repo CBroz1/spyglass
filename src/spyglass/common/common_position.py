@@ -688,7 +688,7 @@ class PositionVideo(SpyglassMixin, dj.Computed):
 
         self._info_msg("Making video...")
         self.make_video(
-            f"{video_dir}/{video_filename}",
+            video_dir / video_filename,
             centroids,
             head_position_mean,
             head_orientation_mean,

@@ -1,7 +1,6 @@
 # Convenience functions
 # some DLC-utils copied from datajoint element-interface utils.py
 import logging
-import os
 import subprocess
 import sys
 import matplotlib.path
@@ -199,9 +198,11 @@ def infer_output_dir(key, makedir=True):
         )
 
     nwb_file_name = key["nwb_file_name"].split("_.")[0]
-    output_dir = Path(dlc_output_dir) / Path(
-        f"{nwb_file_name}/{nwb_file_name}_{key['epoch']:02}"
-        f"_model_" + key["dlc_model_name"].replace(" ", "-")
+    model_name = key["dlc_model_name"].replace(" ", "-")
+    output_dir = (
+        dlc_output_dir
+        / nwb_file_name
+        / f"{nwb_file_name}_{key['epoch']:02}_model_{model_name}"
     )
     if makedir:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -263,14 +264,14 @@ def get_video_info(key, populate_missing: bool = True):
         return None, None, None, None
 
     video_info = video_query.fetch1()
-    nwb_path = f"{raw_dir}/{video_info['nwb_file_name']}"
+    nwb_path = raw_dir / video_info["nwb_file_name"]
 
     with pynwb.NWBHDF5IO(path=nwb_path, mode="r") as in_out:
         nwb_file = in_out.read()
         nwb_video = nwb_file.objects[video_info["video_file_object_id"]]
         video_filepath = VideoFile.get_abs_path(vf_key)
-        video_dir = os.path.dirname(video_filepath) + "/"
-        video_filename = video_filepath.split(video_dir)[-1]
+        video_dir = video_filepath.parent
+        video_filename = video_filepath.name
         meters_per_pixel = nwb_video.device.meters_per_pixel
         timestamps = np.asarray(nwb_video.timestamps)
 
@@ -323,13 +324,12 @@ def find_mp4(
     if video_filepath.exists() and video_filepath.suffix == ".mp4":
         return video_filepath
 
-    video_file = (
-        video_filepath.as_posix()
-        .rsplit(video_filepath.parent.as_posix(), maxsplit=1)[-1]
-        .split("/")[-1]
-    )
     return _convert_mp4(
-        video_file, video_path, output_path, videotype="mp4", count_frames=True
+        video_filepath.name,
+        video_path,
+        output_path,
+        videotype="mp4",
+        count_frames=True,
     )
 
 
@@ -363,10 +363,10 @@ def _convert_mp4(
     orig_filename = filename
     video_path = Path(video_path) / filename
 
-    dest_filename = os.path.splitext(filename)[0]
+    dest_filename = Path(filename).stem
     if ".1" in dest_filename:
-        dest_filename = os.path.splitext(dest_filename)[0]
-    dest_path = Path(f"{dest_path}/{dest_filename}.{videotype}")
+        dest_filename = Path(dest_filename).stem
+    dest_path = Path(dest_path) / f"{dest_filename}.{videotype}"
     if dest_path.exists():
         logger.info(f"{dest_path} already exists, skipping conversion")
         return dest_path

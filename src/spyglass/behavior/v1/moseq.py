@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -28,6 +27,7 @@ def _require_keypoint_moseq():
 from spyglass.common import AnalysisNwbfile
 from spyglass.position.position_merge import PositionOutput
 from spyglass.settings import moseq_project_dir, moseq_video_dir
+from spyglass.utils.path_helper_fn import link_or_copy
 from spyglass.utils import SpyglassMixin
 
 from .core import (
@@ -200,19 +200,17 @@ class MoseqModel(SpyglassMixin, dj.Computed):
         _require_keypoint_moseq()
 
         # set up the project and config
-        project_dir, video_dir = moseq_project_dir, moseq_video_dir
-        project_dir = os.path.join(project_dir, model_name)
-        video_dir = os.path.join(video_dir, model_name)
-        # os.makedirs(project_dir, exist_ok=True)
-        os.makedirs(video_dir, exist_ok=True)
-        # make symlinks to the videos in a single directory
+        project_dir = moseq_project_dir / model_name
+        video_dir = moseq_video_dir / model_name
+        video_dir.mkdir(parents=True, exist_ok=True)
+        # gather the videos into a single directory
         for video in video_paths:
-            destination = os.path.join(video_dir, os.path.basename(video))
-            if os.path.exists(destination):
-                continue  # skip if the symlink already exists
-            if os.path.lexists(destination):
-                os.remove(destination)  # remove if it's a broken symlink
-            os.symlink(video, destination)
+            destination = video_dir / Path(video).name
+            if destination.exists():
+                continue  # skip if already present
+            if destination.is_symlink():
+                destination.unlink()  # remove if it's a broken symlink
+            link_or_copy(video, destination)
 
         kpms.setup_project(
             str(project_dir),
@@ -410,15 +408,15 @@ class MoseqModel(SpyglassMixin, dj.Computed):
 
         Returns
         -------
-        List[str]
-            list of paths to the training progress plots
+        Path
+            path to the training progress plot
         """
         if key is None:
             key = {}
         project_dir, model_name = (self & key).fetch1(
             "project_dir", "model_name"
         )
-        return f"{project_dir}/{model_name}/fitting_progress.pdf"
+        return Path(project_dir) / model_name / "fitting_progress.pdf"
 
     def generate_trajectory_plots(
         self, key: dict = True, output_dir: Path = None, **kwargs

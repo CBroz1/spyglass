@@ -1,4 +1,3 @@
-import os
 import tempfile
 import time
 import uuid
@@ -22,6 +21,7 @@ from spyglass.spikesorting.v1.recording import (  # noqa: F401
     _consolidate_intervals,
 )
 from spyglass.utils import SpyglassMixin, logger
+from spyglass.utils.path_helper_fn import safe_chmod
 
 schema = dj.schema("spikesorting_v1_sorting")
 
@@ -416,7 +416,7 @@ class SpikeSorting(SpyglassMixin, dj.Computed):
             )
         else:
             sorter_temp_dir = tempfile.TemporaryDirectory(dir=temp_dir)
-            os.chmod(sorter_temp_dir.name, 0o777)
+            safe_chmod(sorter_temp_dir.name, 0o777)
 
             # Only mountainsort4 declares a `tempdir` scratch-dir param. Passing
             # `tempdir` to any other sorter makes its parameter validation raise

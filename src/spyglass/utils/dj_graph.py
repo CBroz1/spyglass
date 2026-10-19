@@ -33,6 +33,7 @@ from spyglass.utils import logger
 from spyglass.utils.database_settings import SHARED_MODULES
 from spyglass.utils.dj_helper_fn import PERIPHERAL_TABLES  # is_nonempty,
 from spyglass.utils.dj_helper_fn import ensure_names, fuzzy_get, unique_dicts
+from spyglass.utils.path_helper_fn import store_filepath
 
 
 def dj_topo_sort(graph: DiGraph) -> List[str]:
@@ -242,7 +243,7 @@ class AbstractGraph(ABC):
 
     def _get_restr(self, table):
         """Get restriction from graph node."""
-        if (restr := self._get_node(ensure_names(table)).get("restr")) is None:
+        if self._get_node(ensure_names(table)).get("restr") is None:
             restr_list = self._get_restr_list(table)
             if not restr_list:
                 return None
@@ -1244,7 +1245,7 @@ class RestrGraph(AbstractGraph):
             self.analysis_file_tbl.full_table_name, with_restr=True
         ).fetch("analysis_file_abs_path")
         analysis_paths = [
-            str(Path(p).relative_to(stores["analysis"]["location"]))
+            store_filepath(Path(p).relative_to(stores["analysis"]["location"]))
             for p in analysis_abs_paths
         ]
         set_external("analysis", analysis_paths)
@@ -1253,7 +1254,7 @@ class RestrGraph(AbstractGraph):
             "`common_nwbfile`.`nwbfile`", with_restr=True
         ).fetch("nwb_file_abs_path")
         raw_paths = [
-            str(Path(p).relative_to(stores["raw"]["location"]))
+            store_filepath(Path(p).relative_to(stores["raw"]["location"]))
             for p in raw_abs_paths
         ]
         set_external("raw", raw_paths)

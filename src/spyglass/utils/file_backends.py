@@ -27,7 +27,6 @@ imported this way for the cycle reason: it imports `dj_helper_fn`, which
 imports `nwb_helper_fn`, which imports this module.
 """
 
-import os
 from abc import abstractmethod
 from pathlib import Path
 from typing import (
@@ -42,6 +41,7 @@ from typing import (
 import pynwb
 
 from spyglass.utils.logging import logger
+from spyglass.utils.path_helper_fn import PathLike
 
 
 class Opened(NamedTuple):
@@ -118,12 +118,12 @@ class FileBackend(Protocol):
     supports_download: bool = False
 
     @abstractmethod
-    def has(self, nwb_file_path: str) -> bool:
+    def has(self, nwb_file_path: PathLike) -> bool:
         """Return True if this backend can supply the given file.
 
         Parameters
         ----------
-        nwb_file_path : str
+        nwb_file_path : PathLike
             Absolute path of the file as Spyglass expects it locally.
 
         Returns
@@ -133,14 +133,16 @@ class FileBackend(Protocol):
         """
         raise NotImplementedError
 
-    def download(self, nwb_file_path: str, dest: Optional[str] = None) -> bool:
+    def download(
+        self, nwb_file_path: PathLike, dest: Optional[PathLike] = None
+    ) -> bool:
         """Fetch the file to local disk.
 
         Parameters
         ----------
-        nwb_file_path : str
+        nwb_file_path : PathLike
             Absolute path of the file as Spyglass expects it locally.
-        dest : str, optional
+        dest : PathLike, optional
             Destination path. Defaults to `nwb_file_path`. Backends that resolve
             their own destination may ignore this.
 
@@ -154,7 +156,7 @@ class FileBackend(Protocol):
         )
 
     def stream(
-        self, nwb_file_path: str
+        self, nwb_file_path: PathLike
     ) -> Tuple[pynwb.NWBHDF5IO, pynwb.NWBFile]:
         """Read the file over the network without writing a local copy.
 
@@ -162,7 +164,7 @@ class FileBackend(Protocol):
 
         Parameters
         ----------
-        nwb_file_path : str
+        nwb_file_path : PathLike
             Absolute path of the file as Spyglass expects it locally.
 
         Returns
@@ -174,7 +176,7 @@ class FileBackend(Protocol):
             f"Backend '{self.name}' does not implement stream."
         )
 
-    def will_stream(self, nwb_file_path: str) -> bool:
+    def will_stream(self, nwb_file_path: PathLike) -> bool:
         """Return True if `open` would stream this file rather than download.
 
         Streams when the backend can and the user has not opted out. A user who
@@ -186,7 +188,7 @@ class FileBackend(Protocol):
 
         Parameters
         ----------
-        nwb_file_path : str
+        nwb_file_path : PathLike
             Absolute path of the file as Spyglass expects it locally.
 
         Returns
@@ -200,7 +202,7 @@ class FileBackend(Protocol):
             return False
         return not (self.supports_download and sg_config.prefer_download)
 
-    def open(self, nwb_file_path: str) -> Opened:
+    def open(self, nwb_file_path: PathLike) -> Opened:
         """Open the file and report how it was read.
 
         Streams if the backend supports it and the user has not set
@@ -209,7 +211,7 @@ class FileBackend(Protocol):
 
         Parameters
         ----------
-        nwb_file_path : str
+        nwb_file_path : PathLike
             Absolute path of the file as Spyglass expects it locally.
 
         Returns
@@ -235,13 +237,13 @@ class FileBackend(Protocol):
 
 
 def _open_local_nwb(
-    nwb_file_path: str,
+    nwb_file_path: PathLike,
 ) -> Tuple[pynwb.NWBHDF5IO, pynwb.NWBFile]:
     """Open an NWB file from local disk without caching it.
 
     Parameters
     ----------
-    nwb_file_path : str
+    nwb_file_path : PathLike
         Absolute path to a local NWB file.
 
     Returns
@@ -264,11 +266,11 @@ class LocalBackend(FileBackend):
     supports_streaming = False
     supports_download = False
 
-    def has(self, nwb_file_path: str) -> bool:
+    def has(self, nwb_file_path: PathLike) -> bool:
         """Return True if the file exists on disk."""
-        return os.path.exists(nwb_file_path)
+        return Path(nwb_file_path).exists()
 
-    def open(self, nwb_file_path: str) -> Opened:
+    def open(self, nwb_file_path: PathLike) -> Opened:
         """Open the file from disk."""
         return Opened(*_open_local_nwb(nwb_file_path), streamed=False)
 
@@ -284,7 +286,7 @@ class KacheryBackend(FileBackend):
     supports_streaming = False
     supports_download = True
 
-    def has(self, nwb_file_path: str) -> bool:
+    def has(self, nwb_file_path: PathLike) -> bool:
         """Return True if kachery is installed and knows this file."""
         from spyglass.sharing import sharing_kachery
 
@@ -300,7 +302,9 @@ class KacheryBackend(FileBackend):
             & {"analysis_file_name": Path(nwb_file_path).name}
         )
 
-    def download(self, nwb_file_path: str, dest: Optional[str] = None) -> bool:
+    def download(
+        self, nwb_file_path: PathLike, dest: Optional[PathLike] = None
+    ) -> bool:
         """Download via kachery, which resolves its own destination path."""
         from spyglass.sharing import sharing_kachery
 
@@ -323,7 +327,7 @@ class DandiBackend(FileBackend):
     supports_streaming = True
     supports_download = True
 
-    def _resolve(self, nwb_file_path: str) -> Optional[str]:
+    def _resolve(self, nwb_file_path: PathLike) -> Optional[PathLike]:
         """Return the name DANDI knows this file by, or None if it has neither.
 
         Raw files are published without the trailing underscore Spyglass uses
@@ -335,7 +339,7 @@ class DandiBackend(FileBackend):
 
         Parameters
         ----------
-        nwb_file_path : str
+        nwb_file_path : PathLike
             Absolute path of the file as Spyglass expects it locally.
 
         Returns
@@ -354,11 +358,11 @@ class DandiBackend(FileBackend):
             return dandi_path.raw_from_path(nwb_file_path)["filename"]
         return None
 
-    def has(self, nwb_file_path: str) -> bool:
+    def has(self, nwb_file_path: PathLike) -> bool:
         """Return True if DANDI holds this file under either naming scheme."""
         return self._resolve(nwb_file_path) is not None
 
-    def will_stream(self, nwb_file_path: str) -> bool:
+    def will_stream(self, nwb_file_path: PathLike) -> bool:
         """Stream if DANDI holds the file only under its raw name.
 
         A raw session published as `X.nwb` is not the `X_.nwb` link copy
@@ -370,7 +374,7 @@ class DandiBackend(FileBackend):
 
         Parameters
         ----------
-        nwb_file_path : str
+        nwb_file_path : PathLike
             Absolute path of the file as Spyglass expects it locally.
 
         Returns
@@ -383,7 +387,7 @@ class DandiBackend(FileBackend):
         return super().will_stream(nwb_file_path)
 
     def stream(
-        self, nwb_file_path: str
+        self, nwb_file_path: PathLike
     ) -> Tuple[pynwb.NWBHDF5IO, pynwb.NWBFile]:
         """Stream the file from DANDI over HTTP range requests.
 
@@ -404,7 +408,9 @@ class DandiBackend(FileBackend):
 
         return DandiPath().fetch_file_from_dandi(nwb_file_path=path_to_load)
 
-    def download(self, nwb_file_path: str, dest: Optional[str] = None) -> bool:
+    def download(
+        self, nwb_file_path: PathLike, dest: Optional[PathLike] = None
+    ) -> bool:
         """Download the whole file from DANDI to the local path.
 
         The destination is the local path Spyglass expects, not the DANDI

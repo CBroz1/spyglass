@@ -9,6 +9,7 @@ from tqdm import tqdm
 from spyglass.common.common_nwbfile import AnalysisRegistry
 from spyglass.settings import test_mode
 from spyglass.utils import SpyglassAnalysis, logger
+from spyglass.utils.path_helper_fn import from_store_filepath, store_filepath
 
 schema = dj.Schema("common_file_tracking")
 
@@ -112,12 +113,15 @@ class AnalysisFileIssues(dj.Manual):
             Mapping of analysis_file_name -> stored contents_hash UUID.
             Only includes files where contents_hash is not NULL.
         """
-        analysis_dir = Path(analysis_tbl._analysis_dir)
+        analysis_dir = analysis_tbl._analysis_dir
 
         # Restrict ext_tbl before querying
-        fpaths = analysis_tbl._get_analysis_file_paths(
-            file_names, relative=True
-        )
+        fpaths = [
+            store_filepath(p)
+            for p in analysis_tbl._get_analysis_file_paths(
+                file_names, relative=True, as_str=False
+            )
+        ]
         restr = (
             f"filepath IN {tuple(fpaths)}"
             if len(fpaths) > 1
@@ -129,10 +133,10 @@ class AnalysisFileIssues(dj.Manual):
         hash_map = {}
 
         for row in ext_tbl.fetch("filepath", "contents_hash", as_dict=True):
-            fname = Path(row["filepath"]).name
-            path_map[fname] = str(analysis_dir / row["filepath"])
+            abs_path = from_store_filepath(row["filepath"], analysis_dir)
+            path_map[abs_path.name] = str(abs_path)
             if row["contents_hash"] is not None:
-                hash_map[fname] = row["contents_hash"]
+                hash_map[abs_path.name] = row["contents_hash"]
 
         # Fall back to generated subdirectory path for unregistered files
         for fname in file_names:

@@ -605,8 +605,8 @@ class Export(SpyglassMixin, dj.Computed):
 
         file_count = len(file_paths)
         logger.debug(f"Preparing {file_count} file entries for export")
-        file_inserts = [
-            {**key, "file_path": fp, "file_id": i}
+        file_inserts = [  # file_path is a varchar column, not a filepath store
+            {**key, "file_path": str(fp), "file_id": i}
             for i, fp in enumerate(file_paths)
         ]
 

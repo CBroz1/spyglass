@@ -439,7 +439,7 @@ def test_batch_resolve_paths_unregistered_fallback(
 ):
     """_batch_resolve_paths generates a subdirectory path for unregistered files."""
     mock_tbl = MagicMock()
-    mock_tbl._analysis_dir = str(tmp_path)
+    mock_tbl._analysis_dir = tmp_path
     fname = "session_abc_123.nwb"
     mock_tbl._get_analysis_file_paths.return_value = [f"session_abc/{fname}"]
     mock_tbl._ext_tbl.__and__.return_value.fetch.return_value = []

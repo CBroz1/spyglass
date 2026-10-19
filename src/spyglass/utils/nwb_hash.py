@@ -100,8 +100,10 @@ class DirectoryHasher:
 
             self.hashed.update(this_hash)
 
-            # update with the rel path to for same file in diff dirs
-            rel_path = str(file_path.relative_to(self.dir_path))
+            # update with the rel path to for same file in diff dirs.
+            # as_posix(): the separator would otherwise enter the hash, so the
+            # same directory would hash differently on Windows than on POSIX.
+            rel_path = file_path.relative_to(self.dir_path).as_posix()
             self.hashed.update(rel_path.encode())
 
             if self.keep_obj_hash:

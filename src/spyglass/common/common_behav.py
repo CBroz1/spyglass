@@ -1,4 +1,3 @@
-import pathlib
 import re
 from collections import defaultdict
 from functools import reduce
@@ -875,24 +874,22 @@ class VideoFile(SpyglassIngestion, dj.Imported):
 
         Returns
         -------
-        nwb_video_file_abspath : str
+        nwb_video_file_abspath : Path
             The absolute path for the given file name.
         """
-        video_path_obj = pathlib.Path(video_dir)
         video_info = (cls & key).fetch1()
         nwb_path = Nwbfile.get_abs_path(key["nwb_file_name"])
         nwbf = get_nwb_file(nwb_path)
         nwb_video = nwbf.objects[video_info["video_file_object_id"]]
         video_filename = nwb_video.name
         # see if the file exists and is stored in the base analysis dir
-        nwb_video_file_abspath = pathlib.Path(video_path_obj / video_filename)
-        if nwb_video_file_abspath.exists():
-            return nwb_video_file_abspath.as_posix()
-        else:
+        nwb_video_file_abspath = video_dir / video_filename
+        if not nwb_video_file_abspath.exists():
             raise FileNotFoundError(
                 f"video file with filename: {video_filename} "
-                f"does not exist in {video_path_obj}/"
+                f"does not exist in {video_dir}"
             )
+        return nwb_video_file_abspath
 
 
 @schema

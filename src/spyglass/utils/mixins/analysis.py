@@ -3,7 +3,7 @@ import random
 import string
 import subprocess
 from functools import cached_property
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, Optional, Union, Tuple
 from uuid import uuid4
 
@@ -21,6 +21,7 @@ from spyglass.utils.dj_helper_fn import get_child_tables
 from spyglass.utils.mixins.base import BaseMixin
 from spyglass.utils.nwb_hash import NwbfileHasher
 from spyglass.utils.nwb_helper_fn import get_electrode_indices, get_nwb_file
+from spyglass.utils.path_helper_fn import safe_chmod, store_filepath
 
 # Only differs from the common AnalysisNwbfile in adding 'Custom' to heading
 ENFORCED_DEFINITION = """
@@ -175,7 +176,7 @@ class AnalysisMixin(BaseMixin):
     # --------------------------- NWB file management -------------------------
 
     @cached_property
-    def _analysis_dir(self) -> str:
+    def _analysis_dir(self) -> Path:
         """Analysis directory from settings (cached at class level)."""
         if self.__class__._cached_analysis_dir is None:
             from spyglass.settings import analysis_dir
@@ -294,7 +295,7 @@ class AnalysisMixin(BaseMixin):
 
         # permissions: 0o644 (only owner write), 0o666 (open)
         permissions = 0o644 if restrict_permission else 0o666
-        os.chmod(analysis_file_abs_path, permissions)
+        safe_chmod(analysis_file_abs_path, permissions)
 
         return analysis_file_name
 
@@ -361,7 +362,7 @@ class AnalysisMixin(BaseMixin):
     @classmethod
     def __get_file_parent(cls, fname: str, relative=True) -> Path:
         """Get the parent dir name for an analysis NWB file."""
-        return Path(cls()._analysis_dir) / cls.__get_analysis_file_dir(fname)
+        return cls()._analysis_dir / cls.__get_analysis_file_dir(fname)
 
     @classmethod
     def __get_analysis_path(cls, fname: str, relative: bool = False) -> Path:
@@ -377,11 +378,11 @@ class AnalysisMixin(BaseMixin):
 
         Returns
         -------
-        path : str
+        path : Path
             The path for the analysis NWB file.
         """
         analysis_dir = cls()._analysis_dir
-        old_format = Path(analysis_dir) / fname  # Flat stored, see #1565
+        old_format = analysis_dir / fname  # Flat stored, see #1565
 
         if old_format.exists():
             abs_path = old_format
@@ -526,7 +527,7 @@ class AnalysisMixin(BaseMixin):
     @classmethod
     def get_abs_path(
         cls, analysis_nwb_file_name: str, from_schema: Optional[bool] = False
-    ) -> str:
+    ) -> Path:
         """Return the absolute path for an analysis NWB file given the name.
 
         This method uses a multi-step fallback strategy to locate files:
@@ -548,7 +549,7 @@ class AnalysisMixin(BaseMixin):
 
         Returns
         -------
-        analysis_nwb_file_abspath : str
+        analysis_nwb_file_abspath : Path
             The absolute path for the given file name.
 
         Raises
@@ -573,7 +574,11 @@ class AnalysisMixin(BaseMixin):
                 cls()._ext_tbl & f"filepath LIKE '%{analysis_nwb_file_name}'"
             )
             if len(query) == 1:
-                return str(Path(cls()._analysis_dir) / query.fetch1("filepath"))
+                # DataJoint stores external filepaths POSIX-style regardless of
+                # host, so the separators are translated on the way back out.
+                return cls()._analysis_dir / PurePosixPath(
+                    query.fetch1("filepath")
+                )
             # If multiple or no matches, fall through to standard resolution
             if len(query) != 0:
                 cls()._logger.warning(
@@ -596,16 +601,19 @@ class AnalysisMixin(BaseMixin):
         query = cls().restrict(file_key, log_export=False)
         if bool(query):
             try:
-                return query.fetch1("analysis_file_abs_path", log_export=False)
+                return Path(
+                    query.fetch1("analysis_file_abs_path", log_export=False)
+                )
             except FileNotFoundError as e:
                 # File is registered but not present locally. Parse the intended
                 # path from DataJoint's error message for downstream use (e.g.,
-                # download from remote storage).
-                return str(e).split(": ")[1].replace("'", "")
+                # download from remote storage). Split on the first ": " only:
+                # a Windows path is itself full of colons.
+                return Path(str(e).split(": ", 1)[1].replace("'", ""))
 
         # FALLBACK 3: Check flat directory structure
-        test_path = f"{cls()._analysis_dir}/{analysis_nwb_file_name}"
-        if Path(test_path).exists():
+        test_path = cls()._analysis_dir / analysis_nwb_file_name
+        if test_path.exists():
             cls()._logger.debug(
                 f"Found {analysis_nwb_file_name} in flat structure: {test_path}"
             )
@@ -613,18 +621,18 @@ class AnalysisMixin(BaseMixin):
 
         # FALLBACK 4: Generate modern subdirectory path
         # Example: 'analysis_dir/session_ABC/session_ABC123.nwb'
-        analysis_file_base_path = Path(
-            cls()._analysis_dir
-        ) / cls.__get_analysis_file_dir(analysis_nwb_file_name)
+        analysis_file_base_path = cls()._analysis_dir / (
+            cls.__get_analysis_file_dir(analysis_nwb_file_name)
+        )
         if not analysis_file_base_path.exists():
             cls()._logger.debug(
                 f"Creating analysis subdirectory: {analysis_file_base_path}"
             )
-            os.mkdir(str(analysis_file_base_path))
+            analysis_file_base_path.mkdir()
 
-        return str(analysis_file_base_path / analysis_nwb_file_name)
+        return analysis_file_base_path / analysis_nwb_file_name
 
-    def get_abs_paths(self, **kwargs) -> list:
+    def get_abs_paths(self, **kwargs) -> list[Path]:
         """Fetch absolute paths for all analysis files in this restriction.
 
         Convenience method for batch path operations. Fetches all file names
@@ -637,14 +645,13 @@ class AnalysisMixin(BaseMixin):
 
         Returns
         -------
-        list of str
+        list of Path
             Absolute paths to analysis files
 
         Examples
         --------
         >>> from spyglass.common import AnalysisNwbfile
         >>> paths = (AnalysisNwbfile & restriction).get_abs_paths()
-        >>> # ['/data/analysis/file1.nwb', '/data/analysis/file2.nwb']
         """
         file_names = self.fetch("analysis_file_name", **kwargs)
         return [self.get_abs_path(fn) for fn in file_names]
@@ -826,8 +833,10 @@ class AnalysisMixin(BaseMixin):
             The name of the analysis NWB file.
         """
         file_path = self.__get_analysis_path(analysis_file_name, relative=True)
-        key = (self._ext_tbl & f"filepath = '{str(file_path)}'").fetch1()
-        abs_path = Path(self._analysis_dir) / file_path
+        key = (
+            self._ext_tbl & f"filepath = '{store_filepath(file_path)}'"
+        ).fetch1()
+        abs_path = self._analysis_dir / file_path
         key.update(
             {
                 "contents_hash": dj.hash.uuid_from_file(abs_path),

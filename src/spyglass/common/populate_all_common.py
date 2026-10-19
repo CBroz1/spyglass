@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import List, Union
 
 import datajoint as dj
@@ -215,9 +214,9 @@ def populate_all_common(
     ]
 
     config = dict()
-    entries_path = Path(base_dir) / "entries.yaml"
+    entries_path = base_dir / "entries.yaml"
     if entries_path.exists():
-        with open(f"{base_dir}/entries.yaml", "r") as stream:
+        with entries_path.open("r") as stream:
             config = yaml.safe_load(stream)
 
     for tables in table_lists:

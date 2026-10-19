@@ -1,5 +1,4 @@
 import copy
-import os
 from pathlib import Path
 
 import datajoint as dj
@@ -433,8 +432,9 @@ class TrodesPosVideo(SpyglassMixin, dj.Computed):
             )
             return [False, None]  # Null insert
 
+        # get_video_info already returns the containing directory
         video_path = find_mp4(
-            video_path=os.path.dirname(video_path) + "/",
+            video_path=video_path,
             video_filename=video_filename,
         )
 

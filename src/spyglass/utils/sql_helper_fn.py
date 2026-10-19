@@ -9,6 +9,8 @@ import yaml
 from datajoint import FreeTable
 from datajoint import config as dj_config
 
+from spyglass.utils.path_helper_fn import safe_chmod
+
 
 class SQLDumpHelper:
     """Write a series of export files to export_dir/paper_id.
@@ -69,9 +71,9 @@ class SQLDumpHelper:
 
         template = "[client]\nuser={user}\npassword={password}\nhost={host}\n"
 
-        with open(str(cnf_path), "w") as file:
+        with cnf_path.open("w") as file:
             file.write(template.format(**self._get_credentials()))
-        cnf_path.chmod(0o600)
+        safe_chmod(cnf_path, 0o600)
 
     def _cmd_prefix(self, docker_id=None):
         """Get prefix for mysqldump command. Includes docker exec if needed."""

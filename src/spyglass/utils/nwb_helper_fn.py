@@ -1,7 +1,5 @@
 """NWB helper functions for finding processing modules and data interfaces."""
 
-import os
-import os.path
 from itertools import groupby
 from pathlib import Path
 from typing import List, Union
@@ -23,6 +21,7 @@ __open_nwb_files = dict()
 
 # dict mapping NWB file path to config after it is loaded once
 __configs = dict()
+
 
 global invalid_electrode_index
 invalid_electrode_index = 99999999
@@ -46,7 +45,7 @@ def _open_nwb_file(nwb_file_path, source=None):
     backend = source or LocalBackend()
 
     opened = backend.open(nwb_file_path)
-    __open_nwb_files[nwb_file_path] = opened
+    __open_nwb_files[Path(nwb_file_path)] = opened
 
     return opened.nwbfile
 
@@ -89,7 +88,7 @@ def get_nwb_file(nwb_file_path, query_expression=None):
 
         nwb_file_path = Nwbfile.get_abs_path(nwb_file_path)
 
-    opened = __open_nwb_files.get(nwb_file_path)
+    opened = __open_nwb_files.get(Path(nwb_file_path))
 
     if opened is not None:
         return opened.nwbfile
@@ -116,7 +115,7 @@ def get_nwb_file(nwb_file_path, query_expression=None):
     if hasattr(query_expression, "_make_file"):
         # if the query_expression has a _make_file method, call it to
         # recompute the file
-        basename = os.path.basename(nwb_file_path)
+        basename = Path(nwb_file_path).name
         logger.info(f"Recomputing {basename}")
 
         nwbfile = query_expression._make_file(recompute_file_name=basename)
@@ -128,8 +127,7 @@ def get_nwb_file(nwb_file_path, query_expression=None):
         or "any remote backend"
     )
     raise FileNotFoundError(
-        f"NWB file not found in {sources}: "
-        + f"{os.path.basename(nwb_file_path)}."
+        f"NWB file not found in {sources}: " + f"{Path(nwb_file_path).name}."
     )
 
 
@@ -151,7 +149,7 @@ def file_is_remote(filepath):
         local reads, for files downloaded before reading, and for paths that
         are not open.
     """
-    opened = __open_nwb_files.get(filepath)
+    opened = __open_nwb_files.get(Path(filepath))
 
     return bool(opened and opened.streamed)
 
@@ -170,16 +168,19 @@ def file_from_dandi(filepath):
     return file_is_remote(filepath)
 
 
-def get_linked_nwbs(path: str) -> List[str]:
+def get_linked_nwbs(path: Union[str, Path]) -> List[Path]:
     """Return a paths linked in the given NWB file.
 
     Given a NWB file path, open & read the file to find any linked NWB objects.
     """
-    with pynwb.NWBHDF5IO(path, "r") as io:
+    path = Path(path)
+    with pynwb.NWBHDF5IO(str(path), "r") as io:
         # open the nwb file (opens externally linked files as well)
         _ = io.read()
-        # get the linked files
-        return [x for x in io._HDF5IO__built if x != path]
+        # get the linked files. __built is keyed by path strings, so compare
+        # as Path -- a str vs Path comparison never matches and the file
+        # would fail to exclude itself from its own link list.
+        return [Path(x) for x in io._HDF5IO__built if Path(x) != path]
 
 
 def get_config(nwb_file_path: str, calling_table: str = None) -> dict:
@@ -199,15 +200,16 @@ def get_config(nwb_file_path: str, calling_table: str = None) -> dict:
     dict
         Dictionary of configuration settings loaded from the YAML file
     """
-    if nwb_file_path in __configs:  # load from cache if exists
-        return __configs[nwb_file_path]
+    cache_key = Path(nwb_file_path)
+    if cache_key in __configs:  # load from cache if exists
+        return __configs[cache_key]
 
     obj_path = Path(nwb_file_path)
     # NOTE use stem[:-1] to remove the underscore that was added to the file
     config_path = obj_path.parent / (
         obj_path.stem[:-1] + "_spyglass_config.yaml"
     )
-    if not os.path.exists(config_path):
+    if not config_path.exists():
         from spyglass.settings import base_dir, test_mode  # noqa: F401
 
         rel_path = obj_path.relative_to(base_dir)
@@ -215,13 +217,13 @@ def get_config(nwb_file_path: str, calling_table: str = None) -> dict:
         if not test_mode:
             logger.info(f"{table}No config found at {rel_path}")
         ret = dict()
-        __configs[nwb_file_path] = ret  # cache to avoid repeated null lookups
+        __configs[cache_key] = ret  # cache to avoid repeated null lookups
         return ret
     with open(config_path, "r") as stream:
         config_dict = yaml.safe_load(stream)
 
     # TODO write a JSON schema for the yaml file and validate the yaml file
-    __configs[nwb_file_path] = config_dict  # store in cache
+    __configs[cache_key] = config_dict  # store in cache
     return config_dict
 
 
@@ -675,7 +677,8 @@ def get_all_spatial_series(nwbf, verbose=False, incl_times=True) -> dict:
 def get_nwb_copy_filename(nwb_file_name):
     """Get file name of copy of nwb file without the electrophys data"""
 
-    filename, file_extension = os.path.splitext(nwb_file_name)
+    name = Path(nwb_file_name)
+    filename, file_extension = name.stem, name.suffix
 
     if filename.endswith("_"):
         logger.warning(f"File may already be a copy: {nwb_file_name}")
