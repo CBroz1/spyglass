@@ -29,7 +29,7 @@ import subprocess
 from datetime import datetime
 from fractions import Fraction
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import datajoint as dj
 import numpy as np
@@ -1185,10 +1185,16 @@ class PoseEstim(SpyglassMixin, dj.Computed):
         from spyglass.position.utils.pose_processing import convert_to_cm
 
         meters_per_pixel = fetched["meters_per_pixel"]
-        self._info_msg(
-            f"Converting coordinates to cm (meters_per_pixel={meters_per_pixel})"
-        )
-        pose_df = convert_to_cm(pose_df, meters_per_pixel)
+        if meters_per_pixel is None:
+            self._info_msg(
+                "No camera calibration; leaving coordinates in pixels"
+            )
+        else:
+            self._info_msg(
+                "Converting coordinates to cm "
+                f"(meters_per_pixel={meters_per_pixel})"
+            )
+            pose_df = convert_to_cm(pose_df, meters_per_pixel)
 
         return [
             fetched,
@@ -1410,18 +1416,22 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             )
 
     @staticmethod
-    def _fetch_meters_per_pixel(key: dict) -> float:
+    def _fetch_meters_per_pixel(key: dict) -> Optional[float]:
         """Fetch meters_per_pixel from the NWB CameraDevice for the group.
 
-        Used only by the single-camera 2D path.  The 3D triangulation path
+        Used only by the single-camera 2D path. The 3D triangulation path
         derives real-world coordinates directly from camera extrinsics and
         does not call this method.
 
-        Falls back to ``1.0`` (coordinates remain at pixel scale) with a
-        warning when the VideoFile's NWB object or its CameraDevice cannot be
-        resolved — e.g. for tutorial / bootstrap sessions whose VideoFile
-        object IDs are synthetic and absent from the source NWB.  This mirrors
-        the fallback behaviour of ``_fetch_video_timestamps``.
+        Returns None when the CameraDevice records no usable calibration,
+        which leaves coordinates in pixels and stores them with unit
+        ``'pixels'``. A value of zero or less counts as unusable: it would
+        scale every coordinate to zero.
+
+        Errors reading the NWB file are not caught. An unset settings
+        directory or an unreadable path is a configuration problem, and
+        substituting a scale factor for it would store pixel values labelled
+        as centimetres.
 
         Parameters
         ----------
@@ -1430,8 +1440,8 @@ class PoseEstim(SpyglassMixin, dj.Computed):
 
         Returns
         -------
-        float
-            Metres represented by one pixel.
+        float or None
+            Metres represented by one pixel, or None if uncalibrated.
 
         Raises
         ------
@@ -1444,17 +1454,24 @@ class PoseEstim(SpyglassMixin, dj.Computed):
                 f"No VideoFile entries found for vid_group_id="
                 f"'{key['vid_group_id']}'. Cannot fetch meters_per_pixel."
             )
-        try:
-            nwb_data = (VideoFile & vf_keys[0]).fetch_nwb()[0]
-            return float(nwb_data["video_file"].device.meters_per_pixel)
-        except (OSError, KeyError, TypeError, AttributeError) as e:
+        # Deliberately not wrapped: a path or config failure here is broken
+        # setup, not an uncalibrated camera, and must surface before
+        # inference rather than becoming a fabricated scale factor.
+        nwb_data = (VideoFile & vf_keys[0]).fetch_nwb()[0]
+        device = getattr(nwb_data.get("video_file"), "device", None)
+        recorded = getattr(device, "meters_per_pixel", None)
+
+        if recorded is None or float(recorded) <= 0:
             logger.warn_msg(
-                "Could not resolve meters_per_pixel from the VideoFile "
-                f"CameraDevice ({type(e).__name__}: {e}); falling back to "
-                "1.0 (coordinates remain at pixel scale). This is expected "
-                "for tutorial/bootstrap sessions without a calibrated camera."
+                "No usable meters_per_pixel on the VideoFile CameraDevice "
+                f"for vid_group_id='{key['vid_group_id']}' (got "
+                f"{recorded!r}). Coordinates stay in pixels and are stored "
+                "with unit 'pixels'. Expected for tutorial or bootstrap "
+                "sessions without a calibrated camera."
             )
-            return 1.0
+            return None
+
+        return float(recorded)
 
     @staticmethod
     def _fetch_video_timestamps(key: dict) -> np.ndarray:
@@ -1487,13 +1504,13 @@ class PoseEstim(SpyglassMixin, dj.Computed):
             with dedupe_warnings():
                 nwb_data = (VideoFile & vf_keys[0]).fetch_nwb()[0]
             ts = np.asarray(nwb_data["video_file"].timestamps)
-        except (OSError, KeyError, TypeError, AttributeError) as e:
-            # Don't swallow silently: this is the difference between "the
-            # video-file fallback below actually ran and got a real answer"
-            # and "something (an NFS/HDF5 file-lock hiccup, a genuinely
-            # missing NWB object, ...) broke the primary lookup" -- the
-            # latter needs to be visible to diagnose, not just a generic
-            # "both paths failed" message at the end.
+        except (OSError, KeyError, AttributeError) as e:
+            # TypeError is excluded: it means a bad argument reached the
+            # lookup (an unset settings dir, say), which the video-file
+            # fallback cannot stand in for. Those propagate.
+            # The caught cases are logged rather than swallowed so a real
+            # NWB read problem stays distinguishable from a session whose
+            # NWB object IDs are synthetic.
             logger.warning(
                 f"NWB timestamp lookup failed for vid_group_id="
                 f"'{key['vid_group_id']}' ({type(e).__name__}: {e}); "

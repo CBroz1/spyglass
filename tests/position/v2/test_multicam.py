@@ -1,5 +1,7 @@
 """Tests for multi-camera support: MC01–MC05."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -108,6 +110,57 @@ class TestFetchMetersPerPixel:
 
         with pytest.raises((ValueError, KeyError, AttributeError)):
             PoseEstim._fetch_meters_per_pixel({"vid_group_id": "nonexistent"})
+
+    @pytest.mark.parametrize("recorded", [None, 0.0, -1.0])
+    def test_unusable_calibration_returns_none(
+        self, position_v2, monkeypatch, recorded
+    ):
+        """An absent or non-positive calibration must not become a scale.
+
+        Returning 1.0 here multiplied every coordinate by 100 and stored the
+        result as centimetres; 0.0 would scale them all to zero.
+        """
+        from spyglass.position.v2 import estim as estim_mod
+
+        device = SimpleNamespace(meters_per_pixel=recorded)
+        monkeypatch.setattr(
+            estim_mod.VideoFile,
+            "fetch_nwb",
+            lambda self: [{"video_file": SimpleNamespace(device=device)}],
+        )
+        monkeypatch.setattr(
+            estim_mod.VidFileGroup.File,
+            "fetch",
+            lambda self, *a, **k: [{"vid_group_id": "g"}],
+        )
+
+        assert (
+            estim_mod.PoseEstim._fetch_meters_per_pixel({"vid_group_id": "g"})
+            is None
+        )
+
+    def test_config_error_propagates(self, position_v2, monkeypatch):
+        """A path or config failure must surface, not become a calibration.
+
+        `raw_dir` being unset raised TypeError inside the NWB lookup, which
+        the old handler caught and reported as an uncalibrated camera.
+        """
+        from spyglass.position.v2 import estim as estim_mod
+
+        def _boom(self):
+            raise TypeError(
+                "unsupported operand type(s) for +: 'NoneType' and 'str'"
+            )
+
+        monkeypatch.setattr(estim_mod.VideoFile, "fetch_nwb", _boom)
+        monkeypatch.setattr(
+            estim_mod.VidFileGroup.File,
+            "fetch",
+            lambda self, *a, **k: [{"vid_group_id": "g"}],
+        )
+
+        with pytest.raises(TypeError, match="NoneType"):
+            estim_mod.PoseEstim._fetch_meters_per_pixel({"vid_group_id": "g"})
 
 
 # ---------------------------------------------------------------------------
