@@ -1,66 +1,145 @@
 # Change Log
 
-## [0.5.6] (Unreleased)
+## [0.6.1] (Unreleased)
 
-### Release Notes
-
-Running draft to be removed immediately prior to release. When altering tables,
-import all foreign key references.
+<!--
+### Release notes
 
 ```python
-# Position V2 #1317
-from spyglass.common.common_behav import VideoFile
+# Add alters here
+# from spyglass.location import Each Table Needed To Resolve FKRef
 
-VideoFile().alter()
-VideoFile.update_entries()
-
-# Alter Decoding v1 table
-
-from spyglass.common.common_filter import FirFilterParameters
-from spyglass.decoding.v1.core import DecodingParameters
-
-FirFilterParameters().alter()
-DecodingParameters().alter()
-
-# Alter v0 recompute table
-from spyglass.spikesorting.v0.spikesorting_recompute import (
-    RecordingRecompute,
-    RecordingRecomputeSelection,
-    RecordingRecomputeVersions,  # noqa F401
-    UserEnvironment,  # noqa F401
-)
-
-RecordingRecomputeSelection().alter()
-RecordingRecompute().alter()
-
-# Alter v1 recompute table
-from spyglass.spikesorting.v1.recompute import (
-    RecordingRecompute,
-    RecordingRecomputeSelection,
-    RecordingRecomputeVersions,  # noqa F401
-    UserEnvironment,  # noqa F401
-)
-
-RecordingRecomputeSelection().alter()
-RecordingRecompute().alter()
-
-
-# Fix LFPBandV1 issue #1481
-from spyglass.lfp.analysis.v1 import LFPBandV1
-
-LFPBandV1().fix_1481()
-
-# Increase DLCProject.config_path length
-from spyglass.position.v1.position_dlc_project import DLCProject
-
-DLCProject().alter()
-
-# Add unit_criteria to UnitSelectionParams. Only needed to use that option;
-# existing filters work against the un-altered table
-from spyglass.spikesorting.analysis.v1.group import UnitSelectionParams
-
-UnitSelectionParams().alter()
+# Table.alter()
 ```
+-->
+
+### Breaking Changes
+
+#### `get_sort_group_info` Returns Every Electrode (#1678)
+
+`get_sort_group_info` returned a single representative electrode per sort group,
+so a sort group spanning a whole tetrode was described by one of its four
+channels. It now returns one row per electrode, on `CurationV1`,
+`CuratedSpikeSorting` and `SpikeSortingOutput`.
+
+**Impact**: any caller that assumed a single row — `fetch1()`, or indexing the
+first row — will now see one row per electrode of the group.
+
+**Migration guide**:
+
+```python
+# OLD: one row per sort group
+info = SpikeSortingOutput().get_sort_group_info(merge_keys).fetch1()
+
+# NEW: restrict to the electrode you want
+info = (
+    SpikeSortingOutput().get_sort_group_info(merge_keys) & {"electrode_id": 0}
+).fetch1()
+
+# ... or keep every electrode of the group
+rows = SpikeSortingOutput().get_sort_group_info(merge_keys).fetch(as_dict=True)
+```
+
+#### Shared Position Utilities (#1646)
+
+Position V1 and V2 now share one implementation of each calculation, in
+`spyglass/position/utils/`. Position V1 supports DeepLabCut >= 2.3.
+
+- `spyglass.position.v1.dlc_reader` is removed. Its `PoseEstimation` is
+    `spyglass.position.utils.dlc_io.DLCProjectReader`; its `read_yaml` and
+    `save_yaml` are in `spyglass.position.utils`
+- These are no longer importable: `spyglass.position.utils_dlc`,
+    `v1.dlc_utils_makevid`, `v1.do_pose_estimation`, `v1.read_yaml`,
+    `v1.save_yaml`, `dlc_utils.validate_smooth_params`,
+    `dlc_utils.two_pt_head_orientation`, `dlc_utils.no_orientation` and
+    `dlc_utils._key_to_func_dict`
+- `get_video_info` returns `(None,) * 4` where it raised `FileNotFoundError`;
+    `_process_videos` raises `RuntimeError` where it raised `ValueError`
+- `find_mp4` verifies an existing converted mp4 against its source and raises on
+    a mismatch, at the cost of one `ffprobe -count_frames` per video #1652
+- `speed_smoothing_std_dev` of `0` or `None` skips smoothing, not raises
+- `one_pt_centroid` and `null` sets insert without `max_LED_separation`
+- A smoothing duration rounding below two samples is rejected, not clamped to a
+    one-sample window
+- `validate_list` checks that required items are present, not the reverse
+- Position V2 drops three V1 behaviours: interpolating spans longer than
+    `max_pts_to_interp`, a bisector orientation that can point away from the
+    third LED, and a horizontal orientation for collinear LEDs
+
+### Documentation
+
+- Add LFP artifact detection to the LFP notebook #1641
+- Add File Backends developer page #1662
+- Repair stale notebook cross-links and guard them with a test #1678
+- Move Export tutorial into its own `Data Export` docs category #1678
+- Document admin-only table declaration and MySQL role activation #1678
+
+### Infrastructure
+
+- Prevent errors during update for dandi standard from propagating to other
+    files #1677
+- Refactor `get_nwb_file` fallbacks into a pluggable `FileBackend` protocol
+    #1662
+- Deprecate `file_from_dandi` in favor of `file_is_remote` #1662
+- Add `prefer_download` custom config for stream-capable backends #1662
+- Pin `deeplabcut[tf]<3`; 3.x drops the TensorFlow backend the DLC pipeline
+    targets #1679
+- Pin `ndx-ophys-devices>=0.3.1,<0.4` #1697
+- Fix handler loss in the DLC `file_log` decorator, which dropped the outer
+    call's file handler when these calls nested #1679
+- Correct `Populate.md` on `_parallel_make`, the double `make_fetch` call, and
+    the `None` return from `make_compute` #1679
+- Fix `SpyglassMixinPart.delete` recursion; add `force` for part deletes #1678
+- Grant `dj_user` all but `CREATE` on shared prefixes #1678
+- Grant `REFERENCES` alongside `SELECT` on all read-access schemas #1678
+- Default analysis schema prefix to `database.user` when unset #1678
+- Import `_fir_filter` in a fixture, not at test-module scope #1678
+- Neutralize DeepLabCut's `importlib.reload(logging)` in tests #1678
+- Stop calling `populate()` on deprecated `make`s in tests #1678
+- Repair a stale raw external checksum when a container is reused #1678
+- Force the v1 recompute selection attempt in its test fixture #1678
+
+### Pipelines
+
+- Common
+
+    - Run `UserEnvironment` pip freeze via the active interpreter #1678
+
+- Decoding
+
+    - Pair waveform-feature units with spike times by label, not position #1678
+
+- Position
+
+    - Separate `DLCPosVideo`, `TrodesPosVideo`, and `PositionVideo` to tri-part
+        `make`; `PositionVideo` also closes the video NWB file handle it
+        previously left open #1679
+    - `DLCPosVideo` and `TrodesPosVideo` set `_parallel_make`, so
+        `populate(processes=N)` no longer fails on `VideoMaker`'s process pool
+        under DataJoint's daemonic workers #1679
+    - `TrodesPosVideo` and `PositionVideo` raise on an unmapped epoch instead of
+        committing `has_video=False`, and no longer repair `PositionIntervalMap`
+        or `VideoFile` from `make_fetch` #1679
+    - `DLCPosVideo` raises when a render writes no file, instead of reporting
+        success and inserting no row #1679
+    - `DLCPosVideo` sorts bodyparts, making video color assignment reproducible
+        across databases #1679
+    - `VideoMaker` raises on a failed partial render #1679
+
+- Spike Sorting
+
+    - Store `hash` on `SpikeSortingRecording` insert, and fix the `Path`/`str`
+        comparison that skipped hash verification on recompute. A recompute that
+        does not match the stored hash now deletes the new files and raises. Rows
+        written before this have a null hash; a recompute of one warns and is
+        accepted. Run `SpikeSortingRecording().update_ids()` to backfill them
+        #1662
+    - Respect `safemode` in `RecordingRecompute.delete` #1678
+    - Split recording and artifact restrictions in merge-id lookup #1678
+    - `SpikeSorting.get_sorting` returns a valid zero-unit sorting when no spikes
+        #1678
+
+## [0.6.0] (Sep 1st 2026)
 
 ### Breaking Changes
 
@@ -178,32 +257,6 @@ for label, interval_data in results.groupby("interval_labels"):
 - `0, 1, 2, ...` - Sequential interval indices (0-indexed)
 - `-1` - Time points outside any decoding interval (only when
     `estimate_decoding_params=True`)
-
-#### Shared Position Utilities (#1646)
-
-Position V1 and V2 now share one implementation of each calculation, in
-`spyglass/position/utils/`. Position V1 supports DeepLabCut >= 2.3.
-
-- `spyglass.position.v1.dlc_reader` is removed. Its `PoseEstimation` is
-    `spyglass.position.utils.dlc_io.DLCProjectReader`; its `read_yaml` and
-    `save_yaml` are in `spyglass.position.utils`
-- These are no longer importable: `spyglass.position.utils_dlc`,
-    `v1.dlc_utils_makevid`, `v1.do_pose_estimation`, `v1.read_yaml`,
-    `v1.save_yaml`, `dlc_utils.validate_smooth_params`,
-    `dlc_utils.two_pt_head_orientation`, `dlc_utils.no_orientation` and
-    `dlc_utils._key_to_func_dict`
-- `get_video_info` returns `(None,) * 4` where it raised `FileNotFoundError`;
-    `_process_videos` raises `RuntimeError` where it raised `ValueError`
-- `find_mp4` verifies an existing converted mp4 against its source and raises on
-    a mismatch, at the cost of one `ffprobe -count_frames` per video #1652
-- `speed_smoothing_std_dev` of `0` or `None` skips smoothing, not raises
-- `one_pt_centroid` and `null` sets insert without `max_LED_separation`
-- A smoothing duration rounding below two samples is rejected, not clamped to a
-    one-sample window
-- `validate_list` checks that required items are present, not the reverse
-- Position V2 drops three V1 behaviours: interpolating spans longer than
-    `max_pts_to_interp`, a bisector orientation that can point away from the
-    third LED, and a horizontal orientation for collinear LEDs
 
 ### Documentation
 
@@ -467,6 +520,8 @@ Position V1 and V2 now share one implementation of each calculation, in
         injects the `tempdir` scratch-dir param only for sorters that declare it
         (only `mountainsort4`), instead of injecting it into every sorter and
         maintaining hardcoded removal lists #1655
+    - Fix `MetricCuration` dropping non-empty `merge_groups` #1626
+    - Add `unit_criteria` to `UnitSelectionParams` #1670
 
 ## [0.5.5] (Aug 6, 2025)
 
@@ -965,4 +1020,4 @@ Position V1 and V2 now share one implementation of each calculation, in
 [0.5.3]: https://github.com/LorenFrankLab/spyglass/releases/tag/0.5.3
 [0.5.4]: https://github.com/LorenFrankLab/spyglass/releases/tag/0.5.4
 [0.5.5]: https://github.com/LorenFrankLab/spyglass/releases/tag/0.5.5
-[0.5.6]: https://github.com/LorenFrankLab/spyglass/releases/tag/0.5.6
+[0.6.0]: https://github.com/LorenFrankLab/spyglass/releases/tag/0.6.0

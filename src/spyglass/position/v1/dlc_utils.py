@@ -19,7 +19,7 @@ from position_tools import get_distance
 from spyglass.common.common_usage import ActivityLog
 from spyglass.position.utils.validation import validate_list, validate_option
 from spyglass.settings import pose_output_dir, test_mode
-from spyglass.utils.logging import logger, stream_handler
+from spyglass.utils.logging import logger
 
 _DLC3_WARNED = False
 
@@ -130,14 +130,25 @@ def file_log(this_log, console=False):
             )
             file_handler.setFormatter(file_fmt)
             this_log.addHandler(file_handler)
-            if not console:
-                this_log.removeHandler(logger.handlers[0])
+
+            # Remove the handlers present, then restore those same objects.
+            # Removing handlers[0] by position takes the outer call's file
+            # handler when nested, and restoring the module-level
+            # stream_handler re-adds a handler a caller had removed.
+            suppressed = (
+                []
+                if console
+                else [h for h in this_log.handlers if h is not file_handler]
+            )
+            for handler in suppressed:
+                this_log.removeHandler(handler)
+
             try:
                 return func(self, *args, **kwargs)
             finally:
-                if not console:
-                    this_log.addHandler(stream_handler)
                 this_log.removeHandler(file_handler)
+                for handler in suppressed:
+                    this_log.addHandler(handler)
                 file_handler.close()
 
         return wrapper

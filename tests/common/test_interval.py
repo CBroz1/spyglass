@@ -2,7 +2,6 @@ from unittest.mock import patch
 
 import datajoint as dj
 import numpy as np
-import pandas as pd
 import pytest
 from numpy import array_equal
 
@@ -515,36 +514,3 @@ def test_interval_kwargs_preservation():
     result = interval.intersect([[1.5, 3.5]])
     assert result.kwargs["custom_param"] == "test_value"
     assert result.kwargs["no_overlap"] is True
-
-
-def test_interval_list_operations_from_targeted():
-    """Basic instantiation path for IntervalList."""
-    from spyglass.common.common_interval import IntervalList
-
-    interval_list = IntervalList()
-    assert interval_list is not None
-
-
-@pytest.mark.parametrize(
-    "test_input,expected_type",
-    [
-        ([1, 2, 3], list),
-        (np.array([1, 2, 3]), np.ndarray),
-        (pd.Series([1, 2, 3]), pd.Series),
-    ],
-)
-def test_data_type_handling_from_targeted(test_input, expected_type):
-    """Sanity-check expected data container types."""
-    assert isinstance(test_input, expected_type)
-
-
-def test_data_validation_edge_cases_from_targeted():
-    """Basic DataFrame edge-case sanity checks."""
-    empty_data = pd.DataFrame()
-    assert len(empty_data) == 0
-
-    single_row = pd.DataFrame({"col1": [1], "col2": [2]})
-    assert len(single_row) == 1
-
-    data_with_nan = pd.DataFrame({"col1": [1, np.nan, 3]})
-    assert bool(data_with_nan.isna().any().any())

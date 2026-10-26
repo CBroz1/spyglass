@@ -8,8 +8,8 @@ Verifies that:
 """
 
 import json
-import os
 import sys
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -30,32 +30,6 @@ from install import (
 # Spyglass imports - lazy loaded in tests to avoid hanging during pytest collection
 # DO NOT import SpyglassConfig at module level - it imports datajoint which may
 # try to connect to database before fixtures are set up
-
-
-@pytest.fixture(autouse=True)
-def _restore_global_config():
-    """Snapshot and restore os.environ and dj.config['custom'] per test.
-
-    SpyglassConfig.load_config's COMMIT phase writes directory values
-    straight into os.environ (see settings.py:_set_env_with_dict) rather
-    than through pytest's monkeypatch, so a test that loads a throwaway
-    config with a tmp_path base (e.g. every SPYGLASS_BASE_DIR/DLC_BASE_DIR
-    ignore-check in this file) permanently overwrites the real test
-    session's directory env vars once that tmp_path is torn down --
-    corrupting every subsequent test in the suite. Restore both by value
-    (not just delete-what-monkeypatch-tracked) since load_config also sets
-    keys that never existed in the snapshot.
-    """
-    import datajoint as dj
-
-    env_before = dict(os.environ)
-    custom_before = dict(dj.config.get("custom", {}))
-    try:
-        yield
-    finally:
-        os.environ.clear()
-        os.environ.update(env_before)
-        dj.config["custom"] = custom_before
 
 
 class TestConfigSchema:
@@ -471,6 +445,7 @@ class TestConfigCompatibility:
                 "custom": {
                     "debug_mode": False,
                     "test_mode": False,
+                    "prefer_download": False,
                     "kachery_zone": "franklab.default",
                     "spyglass_dirs": {
                         "base": str(base_dir),
@@ -605,6 +580,7 @@ class TestExampleConfigSync:
                 "custom": {
                     "debug_mode": "false",
                     "test_mode": "false",
+                    "prefer_download": "false",
                     "kachery_zone": "franklab.default",
                     "spyglass_dirs": {
                         "base": str(base_dir),
@@ -718,6 +694,68 @@ class TestExampleConfigSync:
                 f"{group} missing keys {schema_keys - example_keys} "
                 "present in directory_schema.json"
             )
+
+    def test_example_config_is_valid_json(self):
+        """Test that dj_local_conf_example.json is valid JSON."""
+        example_path = (
+            Path(__file__).parent.parent.parent / "dj_local_conf_example.json"
+        )
+
+        assert (
+            example_path.exists()
+        ), "dj_local_conf_example.json not found in repo root"
+
+        # Should not raise JSONDecodeError
+        with open(example_path) as f:
+            config = json.load(f)
+
+        assert isinstance(
+            config, dict
+        ), "Example config should be a JSON object (dict)"
+
+
+@pytest.fixture(autouse=True)
+def _restore_global_config():
+    """Undo the process-global writes that ``load_config`` performs.
+
+    ``SpyglassConfig.load_config`` unconditionally sets ``os.environ``
+    entries and ``dj.config['stores']`` for whatever base_dir it resolved.
+    Tests below call it with tmp_path bases, so without this fixture the
+    last one to run leaves ``dj.config['stores']['analysis']`` pointing at
+    a pytest tmp directory. tests/setup is collected before the later
+    database-backed suites, so every later database-backed test would then
+    read and write analysis files in the wrong place.
+    """
+    import os
+
+    import datajoint as dj
+
+    saved_stores = deepcopy(dj.config.get("stores"))
+    saved_custom = deepcopy(dj.config.get("custom"))
+    saved_env = {
+        key: value
+        for key, value in os.environ.items()
+        if key.startswith(("SPYGLASS_", "KACHERY_", "DLC_", "MOSEQ_"))
+    }
+
+    yield
+
+    if saved_stores is None:
+        dj.config.pop("stores", None)
+    else:
+        dj.config["stores"] = saved_stores
+    if saved_custom is None:
+        dj.config.pop("custom", None)
+    else:
+        dj.config["custom"] = saved_custom
+
+    for key in [
+        key
+        for key in os.environ
+        if key.startswith(("SPYGLASS_", "KACHERY_", "DLC_", "MOSEQ_"))
+    ]:
+        os.environ.pop(key, None)
+    os.environ.update(saved_env)
 
 
 class TestTestModeBaseDirGuard:
@@ -843,9 +881,8 @@ class TestTestModeEnvVarIgnore:
         assert cfg._moseq_base == str(test_base / "moseq")
 
     def test_ignores_kachery_zone_env_var(self, monkeypatch, test_base):
-        import datajoint as dj
-
         from spyglass.settings import SpyglassConfig
+        import datajoint as dj
 
         custom = dj.config.setdefault("custom", {})
         monkeypatch.delitem(custom, "kachery_zone", raising=False)
@@ -1006,7 +1043,7 @@ class TestTestModeEnvVarIgnore:
         """An ordinary implicit startup load must still return, not raise."""
         import datajoint as dj
 
-        from spyglass.settings import _UNSET, SpyglassConfig
+        from spyglass.settings import SpyglassConfig, _UNSET
 
         monkeypatch.setitem(
             dj.config.setdefault("custom", {}), "test_mode", True
@@ -1027,7 +1064,7 @@ class TestTestModeEnvVarIgnore:
         A deliberate load of the same bad base still fails loud."""
         import datajoint as dj
 
-        from spyglass.settings import _UNSET, SpyglassConfig
+        from spyglass.settings import SpyglassConfig, _UNSET
 
         production = tmp_path / "production_base"
         custom = dj.config.setdefault("custom", {})
@@ -1152,13 +1189,7 @@ class TestTestModeSandboxContainment:
 
         custom = dj.config.setdefault("custom", {})
         monkeypatch.setitem(custom, "test_mode", False)
-        for key in (
-            "spyglass_dirs",
-            "pose_dirs",
-            "dlc_dirs",
-            "moseq_dirs",
-            "kachery_dirs",
-        ):
+        for key in ("spyglass_dirs", "dlc_dirs", "moseq_dirs", "kachery_dirs"):
             monkeypatch.setitem(custom, key, {})
         return custom
 
