@@ -250,3 +250,115 @@ class TestVidFileGroupGetNwbFile:
         result = VidFileGroup().get_nwb_file(test_group_id)
         assert "nwb_file_name" in result
         assert result["nwb_file_name"] == mini_dict["nwb_file_name"]
+
+
+class TestGroupConstruction:
+    """Group identity and camera assignment must follow the caller's input.
+
+    Four defects sat here: camera indices were paired with a relational
+    fetch's order rather than the input's, `create_from_files` inserted the
+    group before its files so every auto ID hashed an empty list, the
+    session/basename passes accepted their first hit across sessions, and
+    caller overrides were stored without resolving to one `VideoFile`.
+    """
+
+    def test_auto_id_differs_per_file_set(self, position_v2, video_keys):
+        """Two different file sets must not collapse onto one auto ID."""
+        VidFileGroup = position_v2.VidFileGroup
+
+        first = VidFileGroup().insert1(
+            {"files": [video_keys[0]], "description": "one"},
+            skip_duplicates=True,
+        )
+        both = VidFileGroup().insert1(
+            {"files": list(video_keys[:2]), "description": "two"},
+            skip_duplicates=True,
+        )
+
+        assert first["vid_group_id"] != both["vid_group_id"]
+
+    def test_auto_id_ignores_input_order(self, position_v2, video_keys):
+        """The ID names a set of files, so order must not change it."""
+        VidFileGroup = position_v2.VidFileGroup
+        if len(video_keys) < 2:
+            pytest.skip("needs two registered videos")
+
+        forward = VidFileGroup().insert1(
+            {"files": list(video_keys[:2])}, skip_duplicates=True
+        )
+        reverse = VidFileGroup().insert1(
+            {"files": list(reversed(video_keys[:2]))}, skip_duplicates=True
+        )
+
+        assert forward["vid_group_id"] == reverse["vid_group_id"]
+
+    def test_camera_index_length_checked_against_request(
+        self, position_v2, video_keys
+    ):
+        """The count is rejected against requested files, not resolved ones."""
+        VidFileGroup = position_v2.VidFileGroup
+
+        with pytest.raises(ValueError, match="requested video files"):
+            VidFileGroup().insert1(
+                {
+                    "files": [video_keys[0]],
+                    "camera_indices": [0, 1],
+                    "vid_group_id": "cam_len_mismatch",
+                }
+            )
+
+
+class TestOverrideResolution:
+    """A caller-supplied override must name exactly one `VideoFile`.
+
+    Overrides were stored verbatim, so a key naming nothing counted as
+    resolved and produced a group missing that video, while a partial key
+    could name several recordings.
+    """
+
+    @staticmethod
+    def _config(tmp_path, video_path):
+        """A minimal DLC config naming one video."""
+        import yaml
+
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            yaml.safe_dump(
+                {
+                    "project_path": str(tmp_path),
+                    "video_sets": {video_path: {"crop": "0,1,0,1"}},
+                    "bodyparts": ["nose"],
+                }
+            )
+        )
+        return path
+
+    def test_override_naming_nothing_stays_unresolved(
+        self, position_v2, tmp_path
+    ):
+        VidFileGroup = position_v2.video.VidFileGroup
+        video = "/nowhere/absent_clip.mp4"
+        config = self._config(tmp_path, video)
+
+        with pytest.raises(ValueError) as err:
+            VidFileGroup.create_from_dlc_config(
+                config_path=config,
+                vid_file_matches={
+                    video: {"nwb_file_name": "no_such_file_.nwb"}
+                },
+            )
+
+        assert "absent_clip.mp4" in str(err.value)
+
+    def test_valid_override_resolves(self, position_v2, tmp_path, video_keys):
+        """A full, real key is accepted and lands in the group."""
+        VidFileGroup = position_v2.video.VidFileGroup
+        video = "/nowhere/unmatchable_name.mp4"
+        config = self._config(tmp_path, video)
+
+        group = VidFileGroup.create_from_dlc_config(
+            config_path=config,
+            vid_file_matches={video: dict(video_keys[0])},
+        )
+
+        assert len(VidFileGroup.File() & group) == 1
