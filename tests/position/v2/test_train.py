@@ -899,3 +899,59 @@ class TestTrainingHistory:
         assert len(fig.axes) == 3
         assert fig.axes[1].get_ylabel() == "Validation Loss"
         assert fig.axes[2].get_ylabel() == "Learning Rate"
+
+
+class TestDefaultSkeletons:
+    """The shipped 1LED/2LED/4LED rows must describe real bodyparts.
+
+    `bodyparts` previously held edge pairs for 2LED/4LED and a bare string for
+    1LED, with `edges` null, so a caller reading the blob got tuples where it
+    expected names.
+    """
+
+    def test_bodyparts_are_names_not_edges(self, sgp):
+        from spyglass.position.v2.train import Skeleton
+
+        for row in Skeleton.contents:
+            for bp in row["bodyparts"]:
+                assert isinstance(
+                    bp, str
+                ), f"{row['skeleton_id']} bodyparts holds {type(bp).__name__}"
+
+    def test_edges_reference_declared_bodyparts(self, sgp):
+        from spyglass.position.v2.train import Skeleton
+
+        for row in Skeleton.contents:
+            names = set(row["bodyparts"])
+            for a, b in row["edges"]:
+                assert {a, b} <= names, f"{row['skeleton_id']}: ({a}, {b})"
+
+    def test_expected_shapes(self, sgp):
+        from spyglass.position.v2.train import Skeleton
+
+        by_id = {r["skeleton_id"]: r for r in Skeleton.contents}
+        assert by_id["1LED"]["bodyparts"] == ["whiteLED"]
+        assert by_id["1LED"]["edges"] == []
+        assert by_id["2LED"]["edges"] == [("greenLED", "redLED_C")]
+        assert len(by_id["4LED"]["bodyparts"]) == 4
+        assert len(by_id["4LED"]["edges"]) == 3
+
+    def test_hash_matches_insert1_computation(self, sgp):
+        """A stored hash that insert1 would not reproduce breaks duplicate
+        detection against user-inserted skeletons."""
+        from spyglass.position.v2.train import Skeleton
+        from spyglass.position.v2.utils.skeleton import shape_hash_from_edges
+
+        for row in Skeleton.contents:
+            assert row["hash"] == shape_hash_from_edges(
+                row["bodyparts"], row["edges"]
+            ), row["skeleton_id"]
+
+    def test_get_bodyparts_returns_names(self, sgp):
+        """Part rows are populated on demand, so the defaults are usable."""
+        from spyglass.position.v2.train import Skeleton
+
+        assert sorted(Skeleton().get_bodyparts("2LED")) == [
+            "greenLED",
+            "redLED_C",
+        ]
