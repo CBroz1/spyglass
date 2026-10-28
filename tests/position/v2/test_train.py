@@ -955,3 +955,51 @@ class TestDefaultSkeletons:
             "greenLED",
             "redLED_C",
         ]
+
+
+class TestNovelBodypartInsertion:
+    """`accept_new_bodyparts` must go through the curated table's own checks.
+
+    A bulk insert with `allow_direct_insert=True` skipped both the admin
+    check and the normalized-collision guard that `BodyPart.insert1` applies,
+    so two novel spellings of one concept could both commit and leave
+    `canon_map()` raising on every later read.
+    """
+
+    @staticmethod
+    def _skeleton_key(bodyparts):
+        return {"bodyparts": list(bodyparts), "edges": []}
+
+    def test_colliding_novel_spellings_are_rejected(self, sgp):
+        """Both spellings normalize alike, so neither is written."""
+        import datajoint as dj
+
+        from spyglass.position.v2.train import BodyPart, Skeleton
+
+        before = set(BodyPart().fetch("bodypart"))
+
+        with pytest.raises(dj.DataJointError, match="collide with each other"):
+            Skeleton().insert1(
+                self._skeleton_key(["novelName", "novel_name"]),
+                accept_new_bodyparts=True,
+                check_duplicates=False,
+            )
+
+        assert (
+            set(BodyPart().fetch("bodypart")) == before
+        ), "a rejected batch must leave BodyPart unchanged"
+
+    def test_error_names_both_spellings(self, sgp):
+        import datajoint as dj
+
+        from spyglass.position.v2.train import Skeleton
+
+        with pytest.raises(dj.DataJointError) as err:
+            Skeleton().insert1(
+                self._skeleton_key(["fooBar", "foo_bar"]),
+                accept_new_bodyparts=True,
+                check_duplicates=False,
+            )
+
+        message = str(err.value)
+        assert "fooBar" in message and "foo_bar" in message
