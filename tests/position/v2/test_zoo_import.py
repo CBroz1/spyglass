@@ -263,13 +263,24 @@ class TestTrainingMode:
         assert mode == "resumable"
 
     def test_project_without_snapshot_is_inference_only(
-        self, pv2_train, dlc_project_config, skip_if_no_dlc
+        self, pv2_train, tmp_path, skip_if_no_dlc
     ):
-        """Derivation, not the default: no `snapshot-*.pt` means no resume."""
-        import yaml
+        """Derivation, not the default: no `snapshot-*.pt` means no resume.
 
-        cfg = yaml.safe_load(pathlib.Path(dlc_project_config).read_text())
-        mode = pv2_train.Model()._project_training_mode(cfg, dlc_project_config)
+        Uses its own project directory. The shared `dlc_project_config` is
+        session-scoped and ships a snapshot, and earlier tests train into it,
+        so asserting the absence of one there depended on suite order.
+        """
+        project = tmp_path / "no_snapshot_project"
+        (project / "dlc-models" / "iteration-0" / "m" / "train").mkdir(
+            parents=True
+        )
+        cfg_path = project / "config.yaml"
+        cfg_path.touch()
+
+        mode = pv2_train.Model()._project_training_mode(
+            {"project_path": str(project)}, cfg_path
+        )
         assert mode == "inference_only"
 
     def test_tensorflow_project_is_inference_only(self, pv2_train):
