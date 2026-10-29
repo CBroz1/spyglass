@@ -1065,3 +1065,74 @@ class TestRankComparableMetrics:
             ],
         )
         assert [r["model_id"] for r in ranked] == ["p_only", "none"]
+
+
+class TestEvaluationResultsParsing:
+    """Evaluation results come from this model's folder, in either format.
+
+    The reader globbed `*-results.csv` recursively and filtered by the
+    substring `shuffle{n}`, so shuffle 1 matched shuffle 10 and
+    `trainingsetindex` was ignored. It then read `"Train error(px)"` while
+    DLC 2.x writes `" Train error(px)"` with a leading space and DLC 3 writes
+    `"train rmse"`, so the read raised KeyError.
+    """
+
+    CONFIG = {"TrainingFraction": [0.95], "Task": "t", "date": "d"}
+
+    def _parsed(self, sgp, monkeypatch, raw, shuffle=1, index=0):
+        from spyglass.position.v2 import train as mod
+
+        captured = {}
+
+        def _read(project_path, config, sh, idx, model_prefix=""):
+            captured.update(shuffle=sh, index=idx)
+            return raw
+
+        monkeypatch.setattr(mod, "read_dlc_model_eval", _read)
+        monkeypatch.setattr(mod, "load_yaml", lambda p: self.CONFIG)
+        out = mod.Model()._parse_dlc_evaluation_results(
+            Path("/proj"), shuffle, index
+        )
+        return out, captured
+
+    def test_legacy_leading_space_headers(self, sgp, monkeypatch):
+        """DLC 2.x spellings, which the old literal keys missed."""
+        raw = {
+            " Train error(px)": "3.5",
+            " Test error(px)": "4.5",
+            "Train error with p-cutoff": "3.0",
+            "Test error with p-cutoff": "4.0",
+            "p-cutoff used": "0.6",
+            "Training iterations:": "1000",
+            "%Training dataset": "95",
+        }
+        out, _ = self._parsed(sgp, monkeypatch, raw)
+        assert out["train_error"] == 3.5
+        assert out["test_error"] == 4.5
+        assert out["training_iterations"] == 1000
+
+    def test_missing_optional_field_is_none(self, sgp, monkeypatch):
+        """A column the file omits must not raise on conversion."""
+        raw = {" Test error(px)": "4.5", "p-cutoff used": None}
+        out, _ = self._parsed(sgp, monkeypatch, raw)
+        assert out["test_error"] == 4.5
+        assert out["p_cutoff"] is None
+        assert out["train_error"] is None
+
+    def test_shuffle_and_index_are_passed_through(self, sgp, monkeypatch):
+        """The exact shuffle and training-set index select the folder."""
+        _, captured = self._parsed(
+            sgp, monkeypatch, {" Test error(px)": "1"}, shuffle=10, index=2
+        )
+        assert captured == {"shuffle": 10, "index": 2}
+
+    def test_absent_results_return_empty(self, sgp, monkeypatch):
+        from spyglass.position.v2 import train as mod
+
+        def _raise(*a, **k):
+            raise RuntimeError("Evaluation folder not found")
+
+        monkeypatch.setattr(mod, "read_dlc_model_eval", _raise)
+        monkeypatch.setattr(mod, "load_yaml", lambda p: self.CONFIG)
+
+        assert mod.Model()._parse_dlc_evaluation_results(Path("/p"), 1, 0) == {}
