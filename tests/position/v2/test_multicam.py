@@ -20,46 +20,64 @@ class TestVidFileGroupCameraIndex:
         defn = VidFileGroup.File.definition
         assert "camera_index" in defn
 
-    def test_create_from_files_camera_indices(self, position_v2, tmp_path):
-        """create_from_files accepts camera_indices kwarg without error."""
+    def test_create_from_files_camera_indices(
+        self, position_v2, multicam_session
+    ):
+        """Each camera_index lands on the file given at that position."""
         VidFileGroup = position_v2.video.VidFileGroup
-        video1 = tmp_path / "cam0.mp4"
-        video2 = tmp_path / "cam1.mp4"
-        video1.touch()
-        video2.touch()
-        # Files not in VideoFile → group created, files skipped.
+        cam0, cam1, _ = (dict(k) for k in multicam_session["keys"])
+
         group_key = VidFileGroup.create_from_files(
-            video_files=[video1, video2],
+            video_files=[cam0, cam1],
             description="stereo test group",
             camera_indices=[0, 1],
         )
-        assert "vid_group_id" in group_key
 
-    def test_camera_indices_length_mismatch_raises(self, position_v2, tmp_path):
-        """Mismatched camera_indices length raises ValueError."""
+        try:
+            rows = (VidFileGroup.File() & group_key).fetch(
+                "video_file_num", "camera_index", as_dict=True
+            )
+            by_file = {r["video_file_num"]: r["camera_index"] for r in rows}
+            assert by_file == {
+                cam0["video_file_num"]: 0,
+                cam1["video_file_num"]: 1,
+            }
+        finally:
+            (VidFileGroup & group_key).super_delete(warn=False, safemode=False)
+
+    def test_camera_indices_length_mismatch_raises(
+        self, position_v2, multicam_session
+    ):
+        """Mismatched camera_indices length raises ValueError.
+
+        Checked before any lookup, since the inputs alone settle it.
+        """
         VidFileGroup = position_v2.video.VidFileGroup
-        video1 = tmp_path / "v.mp4"
-        video1.touch()
+        cam0 = dict(multicam_session["keys"][0])
 
-        # insert1 path: mismatch detected only when files are found in VideoFile,
-        # so for unfound files the insert succeeds silently — just check no crash.
-        group_key = VidFileGroup.create_from_files(
-            video_files=[video1],
-            description="mismatch test",
-            camera_indices=[0, 1],  # length mismatch → but files not in VF
-        )
-        assert "vid_group_id" in group_key
+        with pytest.raises(ValueError, match="camera_indices length"):
+            VidFileGroup.create_from_files(
+                video_files=[cam0],
+                description="mismatch test",
+                camera_indices=[0, 1],
+            )
 
-    def test_legacy_single_cam_default(self, position_v2, tmp_path):
-        """create_from_files without camera_indices uses -1 default."""
+    def test_legacy_single_cam_default(self, position_v2, multicam_session):
+        """Without camera_indices the single-camera sentinel is stored."""
         VidFileGroup = position_v2.video.VidFileGroup
-        video1 = tmp_path / "single.mp4"
-        video1.touch()
+        cam0 = dict(multicam_session["keys"][0])
+
         group_key = VidFileGroup.create_from_files(
-            video_files=[video1],
+            video_files=[cam0],
             description="single cam legacy",
         )
-        assert "vid_group_id" in group_key
+
+        try:
+            assert (VidFileGroup.File() & group_key).fetch1(
+                "camera_index"
+            ) == -1
+        finally:
+            (VidFileGroup & group_key).super_delete(warn=False, safemode=False)
 
 
 class TestMulticamSingleSession:
