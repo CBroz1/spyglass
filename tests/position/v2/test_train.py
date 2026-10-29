@@ -1051,9 +1051,9 @@ class TestRankComparableMetrics:
 
     @staticmethod
     def _rank(sgp, rows):
-        from spyglass.position.v2.train import Model
+        from spyglass.position.v2.utils.model import rank_model_rows
 
-        return Model._rank_model_rows(rows)
+        return rank_model_rows(rows)
 
     def test_p_cutoff_does_not_outrank_full_test(self, sgp):
         ranked = self._rank(

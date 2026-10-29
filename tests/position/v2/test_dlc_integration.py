@@ -302,6 +302,15 @@ class TestDLCFullImport:
         key2 = model.load(str(dlc_project_config))
         assert key1["model_id"] == key2["model_id"]
 
+    def test_explicit_model_id_is_used(
+        self, model, dlc_project_config, dlc_bootstrapped_session
+    ):
+        """An explicit model_id wins over the generated one."""
+        model_key = model.load(
+            str(dlc_project_config), model_id="pv2_d1_custom_id"
+        )
+        assert model_key["model_id"] == "pv2_d1_custom_id"
+
     def test_load_model_path_stored(
         self, model, dlc_project_config, dlc_bootstrapped_session
     ):

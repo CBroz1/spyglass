@@ -209,8 +209,10 @@ class TestRankModelRows:
     """Pure ranking of same-skeleton models by comparable metric (no DB)."""
 
     @pytest.fixture(autouse=True)
-    def _cls(self, pv2_train):
-        self.Model = pv2_train.Model
+    def _rank_fn(self, pv2_train):
+        from spyglass.position.v2.utils.model import rank_model_rows
+
+        self.rank = staticmethod(rank_model_rows)
 
     def test_scored_models_sorted_by_error_ascending(self):
         rows = [
@@ -218,7 +220,7 @@ class TestRankModelRows:
             {"model_id": "lo", "evaluation": {"test_error": 2.0}},
             {"model_id": "mid", "evaluation": {"test_error": 5.0}},
         ]
-        ranked = self.Model._rank_model_rows(rows)
+        ranked = self.rank(rows)
         assert [d["model_id"] for d in ranked] == ["lo", "mid", "hi"]
         assert ranked[0]["metric"] == "test_error"
         assert ranked[0]["value"] == 2.0
@@ -229,7 +231,7 @@ class TestRankModelRows:
             {"model_id": "scored", "evaluation": {"test_error": 4.0}},
             {"model_id": "null2", "evaluation": {}},
         ]
-        ranked = self.Model._rank_model_rows(rows)
+        ranked = self.rank(rows)
         assert ranked[0]["model_id"] == "scored"
         # Both unscored carry no fabricated value.
         assert all(d["value"] is None for d in ranked[1:])
@@ -239,19 +241,19 @@ class TestRankModelRows:
             {"model_id": "a", "evaluation": None},
             {"model_id": "b", "evaluation": {"train_error": 3.0}},
         ]
-        ranked = self.Model._rank_model_rows(rows)
+        ranked = self.rank(rows)
         # train_error alone is not a comparable validation/test metric here.
         assert all(d["value"] is None and d["metric"] is None for d in ranked)
 
     def test_falls_back_to_test_error_p(self):
         row = {"model_id": "m", "evaluation": {"test_error_p": 1.5}}
-        (scored,) = self.Model._rank_model_rows([row])
+        (scored,) = self.rank([row])
         assert scored["metric"] == "test_error_p"
         assert scored["value"] == 1.5
 
     def test_bool_not_treated_as_metric(self):
         row = {"model_id": "m", "evaluation": {"test_error": True}}
-        (scored,) = self.Model._rank_model_rows([row])
+        (scored,) = self.rank([row])
         assert scored["value"] is None
 
     def test_iterations_are_weak_tiebreaker_for_unscored(self):
@@ -259,7 +261,7 @@ class TestRankModelRows:
             {"model_id": "few", "evaluation": {"training_iterations": 10}},
             {"model_id": "many", "evaluation": {"training_iterations": 99}},
         ]
-        ranked = self.Model._rank_model_rows(rows)
+        ranked = self.rank(rows)
         # More iterations sorts first among unscored (deterministic only).
         assert [d["model_id"] for d in ranked] == ["many", "few"]
 
