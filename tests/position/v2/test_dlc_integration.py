@@ -392,6 +392,72 @@ class TestLoadUntrainedProject:
             assert model._project_has_weights(cfg, project / "config.yaml")
 
 
+class TestLoadVidFileMatches:
+    """`load` forwards explicit video matches to the group builder.
+
+    `create_from_dlc_config` has always accepted `vid_file_matches`, but
+    `load` swallowed it in `**kwargs`, so a project whose videos cannot be
+    matched automatically had no way through `load` at all.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _require_dlc(self, skip_if_no_dlc):
+        """Apply DLC skip guard to every test in this class."""
+
+    @staticmethod
+    def _config(tmp_path, video_path, task):
+        """A DLC config naming one unmatchable video and curated bodyparts."""
+        import yaml
+
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            yaml.safe_dump(
+                {
+                    "Task": task,
+                    "project_path": str(tmp_path),
+                    "video_sets": {video_path: {"crop": "0,1,0,1"}},
+                    "bodyparts": ["whiteLED", "tailBase"],
+                    "skeleton": [["whiteLED", "tailBase"]],
+                }
+            )
+        )
+        return path
+
+    def test_load_without_matches_raises(self, model, tmp_path):
+        """The path cannot be resolved, so the import stops."""
+        cfg = self._config(
+            tmp_path, "/nowhere/pv2_t15_unmatched.mp4", "pv2_t15_none"
+        )
+
+        with pytest.raises(ValueError, match="pv2_t15_unmatched.mp4"):
+            model.load(str(cfg))
+
+    def test_load_forwards_vid_file_matches(
+        self, model, tmp_path, two_sessions
+    ):
+        """With an explicit match the same project imports."""
+        from spyglass.position.v2.video import VidFileGroup
+
+        video = "/nowhere/pv2_t15_overridden.mp4"
+        cfg = self._config(tmp_path, video, "pv2_t15_override")
+
+        result = model.load(
+            str(cfg),
+            vid_file_matches={video: dict(two_sessions["keys"][0])},
+        )
+        group = {"vid_group_id": result["vid_group_id"]}
+
+        try:
+            files = VidFileGroup.File() & group
+            assert len(files) == 1
+            assert files.fetch1("nwb_file_name") == two_sessions["names"][0]
+        finally:
+            # `two_sessions` teardown cascades to `VidFileGroup.File` but not
+            # to the master, and DataJoint refuses to delete a part before its
+            # master. Deleting it also clears ModelSelection and Model.
+            (VidFileGroup & group).super_delete(warn=False, safemode=False)
+
+
 # ---------------------------------------------------------------------------
 # load() error cases — DB required, no DLC or session needed
 # ---------------------------------------------------------------------------
