@@ -181,6 +181,10 @@ class TestModelMake:
             mock_vfg.return_value.__and__.return_value.fetch1.return_value = (
                 vid_group_data
             )
+            # make_fetch resolves the group's sessions for the analysis parent.
+            mock_vfg.File.__and__.return_value.fetch.return_value = [
+                "pv2_make_sess.nwb"
+            ]
 
             # Tri-part make: fetch -> compute -> insert.
             fetched = model.make_fetch(sel_key)
@@ -226,24 +230,17 @@ class TestModelMake:
             }
             mock_metadata_obj.skeleton_id = "test_skeleton"
             mock_metadata_obj.parent_id = None
+            mock_metadata_obj.session_files = ["pv2_make_sess.nwb"]
 
             MockMetadata.return_value = mock_metadata_obj
 
             with (
                 patch("spyglass.position.v2.train.NWBHDF5IO"),
                 patch("pynwb.NWBFile") as mock_nwb,
-                patch(
-                    "spyglass.position.v2.train.AnalysisNwbfile"
-                ) as mock_analysis,
-                patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb,
+                patch("spyglass.position.v2.train.AnalysisNwbfile"),
             ):
 
-                # Mock available parent files
-                mock_base_nwb.return_value.fetch.return_value = ["parent.nwb"]
-                mock_analysis.return_value.add.return_value = None
-
-                # Test metadata registration
-                result = model._register_model_metadata(mock_metadata_obj)
+                result = model._write_model_metadata(mock_metadata_obj)
 
                 # Verify NWB file creation
                 mock_nwb.assert_called_once()
@@ -671,30 +668,40 @@ class TestModelTrain:
 
 
 class TestModelMetadataRegistration:
-    """Test Model._register_model_metadata() method."""
+    """Writing the metadata file is separate from registering it.
 
-    def test_register_model_metadata_basic(self, model):
-        """Test basic NWB file creation and registration."""
+    The write runs in `make_compute` and the `AnalysisNwbfile` row in
+    `make_insert`, so a rolled-back insert leaves no orphan. The parent is a
+    session of the model's own video group, not whichever row `Nwbfile`
+    returned first.
+    """
+
+    @staticmethod
+    def _metadata(**overrides):
+        """A `ModelMetadata` with every field populated."""
         from spyglass.position.v2.train import ModelMetadata
 
-        metadata = ModelMetadata(
+        defaults = dict(
             model_id="test_metadata",
             model_path=Path("/test/model.pkl"),
             project_path=Path("/test/project"),
             config_path=Path("/test/config.yaml"),
-            params={"shuffle": 1, "maxiters": 1000},
+            params={"shuffle": 2, "trainingsetindex": 1},
             config={"Task": "TestTask", "date": "2026-04-20"},
             latest_model={
-                "iteration": 1000,
-                "trainFraction": 0.8,
-                "date_trained": datetime.now(timezone.utc),
-                "snapshot": "snapshot-1000",
+                "iteration": 2000,
+                "trainFraction": 0.85,
+                "date_trained": datetime(2026, 4, 20, 10, 30, 0),
+                "snapshot": "snapshot-2000",
             },
             skeleton_id="test_skeleton",
             parent_id="parent_model",
+            session_files=["pv2_sess_b.nwb", "pv2_sess_a.nwb"],
         )
+        return ModelMetadata(**{**defaults, **overrides})
 
-        # Mock NWB components
+    def test_write_leaves_the_database_alone(self, model):
+        """`make_compute` calls this, so it must register nothing."""
         mock_nwbfile = MagicMock()
         mock_io = MagicMock()
 
@@ -704,159 +711,111 @@ class TestModelMetadataRegistration:
             patch(
                 "spyglass.position.v2.train.AnalysisNwbfile"
             ) as mock_analysis,
-            patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb,
+            patch.object(model, "_info_msg"),
         ):
+            result = model._write_model_metadata(self._metadata())
 
-            # Mock parent NWB files available
-            mock_base_nwb.return_value.fetch.return_value = ["parent.nwb"]
-            mock_analysis.return_value.add.return_value = None
-
-            with patch.object(model, "_info_msg"):
-                result = model._register_model_metadata(metadata)
-
-            # Verify NWB file creation
-            assert result == "test_metadata_model.nwb"
-
-            # Verify metadata was added to NWB file
-            mock_nwbfile.add_scratch.assert_called_once()
-            scratch_call = mock_nwbfile.add_scratch.call_args
-            assert scratch_call[1]["name"] == "model_training_metadata"
-
-            # Verify file was written
-            mock_io.__enter__.return_value.write.assert_called_once_with(
-                mock_nwbfile
-            )
-
-    def test_register_model_metadata_no_parent_files(self, model):
-        """Test error when no parent NWB files are available."""
-        from spyglass.position.v2.train import ModelMetadata
-
-        metadata = ModelMetadata(
-            model_id="test_no_parent",
-            model_path=Path("/test/model.pkl"),
-            project_path=Path("/test/project"),
-            config_path=Path("/test/config.yaml"),
-            params={"shuffle": 1},
-            config={"Task": "Test"},
-            latest_model={
-                "iteration": 500,
-                "trainFraction": 0.9,
-                "date_trained": datetime.now(timezone.utc),
-            },
-            skeleton_id="test_skeleton",
+        assert result == "test_metadata_model.nwb"
+        mock_analysis.return_value.add.assert_not_called()
+        mock_io.__enter__.return_value.write.assert_called_once_with(
+            mock_nwbfile
+        )
+        assert (
+            mock_nwbfile.add_scratch.call_args[1]["name"]
+            == "model_training_metadata"
         )
 
-        with patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb:
-            mock_base_nwb.return_value.fetch.return_value = (
-                []
-            )  # No parent files
-
-            with pytest.raises(ValueError, match="No NWB files available"):
-                model._register_model_metadata(metadata)
-
-    def test_register_model_metadata_file_exists(self, model):
-        """Test handling when analysis file already exists."""
-        from spyglass.position.v2.train import ModelMetadata
-
-        metadata = ModelMetadata(
-            model_id="test_exists",
-            model_path=Path("/test/model.pkl"),
-            project_path=Path("/test/project"),
-            config_path=Path("/test/config.yaml"),
-            params={"shuffle": 1},
-            config={"Task": "Test"},
-            latest_model={
-                "iteration": 100,
-                "trainFraction": 0.7,
-                "date_trained": datetime.now(timezone.utc),
-            },
-            skeleton_id="test_skeleton",
-        )
-
-        with (
-            patch("pynwb.NWBFile"),
-            patch("spyglass.position.v2.train.NWBHDF5IO"),
-            patch(
-                "spyglass.position.v2.train.AnalysisNwbfile"
-            ) as mock_analysis,
-            patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb,
-        ):
-
-            mock_base_nwb.return_value.fetch.return_value = ["parent.nwb"]
-
-            # Mock that file already exists
-            mock_analysis.return_value.add.side_effect = Exception(
-                "File exists"
-            )
-            mock_existing_check = MagicMock()
-            mock_existing_check.__len__ = lambda x: 1  # File exists
-
-            with (
-                patch.object(model, "_info_msg"),
-                patch.object(
-                    mock_analysis.return_value,
-                    "__and__",
-                    return_value=mock_existing_check,
-                ),
-            ):
-
-                result = model._register_model_metadata(metadata)
-
-                # Should complete without error
-                assert result == "test_exists_model.nwb"
-
-    def test_register_model_metadata_json_serialization(self, model):
-        """Test that training metadata is properly serialized to JSON."""
+    def test_write_serializes_the_training_metadata(self, model):
+        """Every session is recorded, since only the first becomes the FK."""
         import json
-
-        from spyglass.position.v2.train import ModelMetadata
-
-        test_date = datetime(2026, 4, 20, 10, 30, 0)
-        metadata = ModelMetadata(
-            model_id="test_json",
-            model_path=Path("/test/model.pkl"),
-            project_path=Path("/test/project"),
-            config_path=Path("/test/config.yaml"),
-            params={"shuffle": 2, "trainingsetindex": 1},
-            config={"Task": "JSONTest", "date": "2026-04-20"},
-            latest_model={
-                "iteration": 2000,
-                "trainFraction": 0.85,
-                "date_trained": test_date,
-                "snapshot": "snapshot-2000",
-            },
-            skeleton_id="test_skeleton",
-            parent_id="json_parent",
-        )
 
         mock_nwbfile = MagicMock()
 
         with (
             patch("pynwb.NWBFile", return_value=mock_nwbfile),
             patch("spyglass.position.v2.train.NWBHDF5IO"),
+            patch("spyglass.position.v2.train.AnalysisNwbfile"),
+            patch.object(model, "_info_msg"),
+        ):
+            model._write_model_metadata(self._metadata())
+
+        recorded = json.loads(mock_nwbfile.add_scratch.call_args[1]["data"])
+        assert recorded["model_id"] == "test_metadata"
+        assert recorded["shuffle"] == 2
+        assert recorded["iteration"] == 2000
+        assert recorded["parent_id"] == "parent_model"
+        assert recorded["trained_date"] == "2026-04-20T10:30:00"
+        assert recorded["nwb_file_names"] == [
+            "pv2_sess_b.nwb",
+            "pv2_sess_a.nwb",
+        ]
+
+    def test_register_requires_a_parent(self, model):
+        """No session means no provenance; it must not invent one."""
+        with pytest.raises(ValueError, match="No parent session"):
+            model._register_analysis_file("orphan_model.nwb", "")
+
+    def test_register_tolerates_an_existing_row(self, model):
+        """Re-running a selection rewrites the same file name."""
+        with (
             patch(
                 "spyglass.position.v2.train.AnalysisNwbfile"
             ) as mock_analysis,
-            patch("spyglass.position.v2.train.Nwbfile") as mock_base_nwb,
+            patch.object(model, "_info_msg") as mock_info,
+        ):
+            mock_analysis.return_value.add.side_effect = Exception("exists")
+            mock_analysis.return_value.__and__.return_value = ["a row"]
+
+            model._register_analysis_file("test_model.nwb", "parent.nwb")
+
+        assert "already registered" in str(mock_info.call_args)
+
+    def test_register_reraises_when_nothing_was_written(self, model):
+        with (
+            patch(
+                "spyglass.position.v2.train.AnalysisNwbfile"
+            ) as mock_analysis,
             patch.object(model, "_info_msg"),
         ):
+            mock_analysis.return_value.add.side_effect = Exception("boom")
+            mock_analysis.return_value.__and__.return_value = []
 
-            mock_base_nwb.return_value.fetch.return_value = ["parent.nwb"]
-            mock_analysis.return_value.add.return_value = None
+            with pytest.raises(Exception, match="boom"):
+                model._register_analysis_file("test_model.nwb", "parent.nwb")
 
-            model._register_model_metadata(metadata)
+    def test_parent_comes_from_the_models_own_group(
+        self, model, stub_model, two_sessions
+    ):
+        """make_fetch resolves the group's sessions, sorted."""
+        key = {
+            "model_params_id": stub_model["model_params_id"],
+            "tool": "DLC",
+            "vid_group_id": stub_model["vid_group_id"],
+        }
 
-            # Extract the JSON data that was added to scratch
-            scratch_call = mock_nwbfile.add_scratch.call_args[1]
-            json_data = scratch_call["data"]
+        _, _, vid_group, _ = model.make_fetch(key)
 
-            # Verify it's valid JSON
-            parsed_data = json.loads(json_data)
-            assert parsed_data["model_id"] == "test_json"
-            assert parsed_data["shuffle"] == 2
-            assert parsed_data["iteration"] == 2000
-            assert parsed_data["trained_date"] == test_date.isoformat()
-            assert parsed_data["parent_id"] == "json_parent"
+        assert vid_group["nwb_file_names"] == sorted(two_sessions["names"])
+
+    def test_sessionless_group_fails_before_training(
+        self, model, model_sel, stub_model, make_vid_group
+    ):
+        """A group with no files has no parent, so it must not reach training."""
+        empty_group = make_vid_group("pv2_t8_empty_grp", [])
+        key = {
+            "model_params_id": stub_model["model_params_id"],
+            "tool": "DLC",
+            "vid_group_id": empty_group,
+            "model_selection_id": "pv2_t8_empty_sel",
+        }
+        model_sel.insert1(key, allow_redundant_model=True, skip_duplicates=True)
+
+        with pytest.raises(ValueError, match="resolves no session"):
+            model.make_fetch(key)
+
+    def test_registration_is_covered_by_the_transaction(self, model):
+        """`make_insert` is what makes the AnalysisNwbfile row roll back."""
+        assert model._use_transaction is True
 
 
 class TestModelEvaluation:
