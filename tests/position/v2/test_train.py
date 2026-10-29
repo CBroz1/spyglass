@@ -1136,3 +1136,286 @@ class TestEvaluationResultsParsing:
         monkeypatch.setattr(mod, "load_yaml", lambda p: self.CONFIG)
 
         assert mod.Model()._parse_dlc_evaluation_results(Path("/p"), 1, 0) == {}
+
+
+class TestParamsIdentityIncludesSkeleton:
+    """A parameter set's meaning includes its skeleton.
+
+    `params_hash` covered only `params`, so inserting identical parameters
+    for a different skeleton returned the first skeleton's key and the model
+    was associated with the wrong skeleton. The hash now covers both, which
+    also lets `unique index (tool, params_hash)` enforce the constraint.
+    """
+
+    PARAMS = {
+        "model_type": "single_instance",
+        "backbone": "unet",
+        "max_epochs": 7,
+        "batch_size": 4,
+        "learning_rate": 1e-4,
+    }
+
+    def test_same_params_different_skeleton_is_a_new_row(self, sgp):
+        from spyglass.position.v2.train import ModelParams
+
+        first = ModelParams().insert1(
+            {
+                "tool": "SLEAP",
+                "params": dict(self.PARAMS),
+                "skeleton_id": "1LED",
+            },
+            skip_duplicates=True,
+        )
+        second = ModelParams().insert1(
+            {
+                "tool": "SLEAP",
+                "params": dict(self.PARAMS),
+                "skeleton_id": "2LED",
+            },
+            skip_duplicates=True,
+        )
+
+        assert first["model_params_id"] != second["model_params_id"]
+
+    def test_same_params_same_skeleton_is_reused(self, sgp):
+        from spyglass.position.v2.train import ModelParams
+
+        params = dict(self.PARAMS, max_epochs=9)
+        first = ModelParams().insert1(
+            {"tool": "SLEAP", "params": params, "skeleton_id": "1LED"},
+            skip_duplicates=True,
+        )
+        again = ModelParams().insert1(
+            {"tool": "SLEAP", "params": dict(params), "skeleton_id": "1LED"},
+            skip_duplicates=True,
+        )
+
+        assert first == again
+
+    def test_skeleton_recorded_matches_the_request(self, sgp):
+        from spyglass.position.v2.train import ModelParams
+
+        key = ModelParams().insert1(
+            {
+                "tool": "SLEAP",
+                "params": dict(self.PARAMS, max_epochs=11),
+                "skeleton_id": "2LED",
+            },
+            skip_duplicates=True,
+        )
+        assert (ModelParams() & key).fetch1("skeleton_id") == "2LED"
+
+    def test_stored_hash_separates_skeletons(self, sgp):
+        """``unique index (tool, params_hash)`` can only separate the two
+        rows if the stored hashes differ."""
+        from spyglass.position.v2.train import ModelParams
+
+        params = dict(self.PARAMS, max_epochs=13)
+        first = ModelParams().insert1(
+            {"tool": "SLEAP", "params": params, "skeleton_id": "1LED"},
+            skip_duplicates=True,
+        )
+        second = ModelParams().insert1(
+            {"tool": "SLEAP", "params": dict(params), "skeleton_id": "2LED"},
+            skip_duplicates=True,
+        )
+
+        assert (ModelParams() & first).fetch1("params_hash") != (
+            ModelParams() & second
+        ).fetch1("params_hash")
+
+    def test_null_skeleton_params_are_deduplicated(self, sgp):
+        """The default rows carry no skeleton and must still dedupe."""
+        from spyglass.position.v2.train import ModelParams
+
+        params = dict(self.PARAMS, max_epochs=17)
+        first = ModelParams().insert1(
+            {"tool": "SLEAP", "params": params, "skeleton_id": None},
+            skip_duplicates=True,
+        )
+        again = ModelParams().insert1(
+            {"tool": "SLEAP", "params": dict(params), "skeleton_id": None},
+            skip_duplicates=True,
+        )
+
+        assert first == again
+
+    def test_identity_hash_covers_the_skeleton(self):
+        from spyglass.position.v2.train import ModelParams
+
+        params = {"max_epochs": 5}
+        one = ModelParams.get_params_hash(params, "1LED")
+        two = ModelParams.get_params_hash(params, "2LED")
+        none = ModelParams.get_params_hash(params, None)
+
+        assert one != two
+        assert none not in (one, two)
+        assert one == ModelParams.get_params_hash(dict(params), "1LED")
+
+
+class TestPerModelCheckpoint:
+    """Each Model row records its own checkpoint and resumes from it."""
+
+    @staticmethod
+    def _snapshot(tmp_path, shuffle=1, name="snapshot-050.pt"):
+        """Create a snapshot file under a DLC-shaped model folder."""
+        train_dir = (
+            tmp_path
+            / "dlc-models-pytorch"
+            / "iteration-0"
+            / f"proj-Jan01-trainset95shuffle{shuffle}"
+            / "train"
+        )
+        train_dir.mkdir(parents=True)
+        snapshot = train_dir / name
+        snapshot.touch()
+        return snapshot
+
+    def test_model_declares_snapshot_path(self, sgp):
+        from spyglass.position.v2.train import Model
+
+        assert "snapshot_path" in Model().heading.secondary_attributes
+
+    def test_shuffle_of_reads_the_model_folder(self, tmp_path):
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
+        snapshot = self._snapshot(tmp_path, shuffle=3)
+        assert DLCStrategy._shuffle_of(snapshot) == 3
+
+    def test_shuffle_of_unmarked_path_is_none(self, tmp_path):
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
+        assert DLCStrategy._shuffle_of(tmp_path / "train" / "snap.pt") is None
+
+    def test_parent_snapshot_beats_project_latest(self, tmp_path):
+        """The parent's own checkpoint wins over the newest in the project."""
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
+        parent = self._snapshot(tmp_path / "parent", shuffle=1)
+        newer = self._snapshot(tmp_path / "newer", shuffle=1)
+        strategy = DLCStrategy()
+        strategy.get_latest_model_info = lambda cfg: {
+            "path": str(newer.parent),
+            "shuffle": 1,
+        }
+
+        resolved = strategy._resolve_parent_snapshot(
+            {"project_path": str(tmp_path)},
+            shuffle=1,
+            parent_snapshot=str(parent),
+        )
+
+        assert resolved == parent
+
+    def test_parent_snapshot_shuffle_mismatch_is_unresumable(self, tmp_path):
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
+        parent = self._snapshot(tmp_path, shuffle=1)
+        strategy = DLCStrategy()
+        strategy.get_latest_model_info = lambda cfg: pytest.fail(
+            "a shuffle mismatch must not fall back to the project scan"
+        )
+
+        resolved = strategy._resolve_parent_snapshot(
+            {"project_path": str(tmp_path)},
+            shuffle=2,
+            parent_snapshot=str(parent),
+        )
+
+        assert resolved is None
+
+    def test_absent_parent_snapshot_falls_back_to_scan(self, tmp_path):
+        """Rows predating snapshot_path still resolve via the project scan."""
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
+        scanned = self._snapshot(tmp_path / "scanned", shuffle=1)
+        strategy = DLCStrategy()
+        strategy.get_latest_model_info = lambda cfg: {
+            "path": str(scanned.parent),
+            "shuffle": 1,
+        }
+
+        resolved = strategy._resolve_parent_snapshot(
+            {"project_path": str(tmp_path)}, shuffle=1, parent_snapshot=None
+        )
+
+        assert resolved == scanned
+
+    def test_stale_parent_snapshot_falls_back_to_scan(self, tmp_path):
+        """A recorded path that no longer exists degrades to the scan."""
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
+        scanned = self._snapshot(tmp_path / "scanned", shuffle=1)
+        strategy = DLCStrategy()
+        strategy.get_latest_model_info = lambda cfg: {
+            "path": str(scanned.parent),
+            "shuffle": 1,
+        }
+
+        resolved = strategy._resolve_parent_snapshot(
+            {"project_path": str(tmp_path)},
+            shuffle=1,
+            parent_snapshot=str(tmp_path / "gone" / "snapshot-010.pt"),
+        )
+
+        assert resolved == scanned
+
+
+class TestDerivedRunName:
+    """A derived child does not inherit the parent's output directory."""
+
+    PARENT = {
+        "model_id": "parent_model",
+        "model_params_id": "parent_params",
+        "tool": "SLEAP",
+        "vid_group_id": "test_videos",
+        "model_selection_id": "parent_sel",
+    }
+
+    def _derive(self, model, params, **overrides):
+        """Run ``train`` down the continue path; return the child's params."""
+        mock_restricted = MagicMock()
+        mock_restricted.fetch1.return_value = dict(self.PARENT)
+
+        with (
+            patch.object(type(model), "__and__", return_value=mock_restricted),
+            patch("spyglass.position.v2.train.ModelParams") as mock_params,
+            patch("spyglass.position.v2.train.ModelSelection") as mock_sel,
+            patch.object(model, "populate"),
+        ):
+            mock_params.return_value.__and__.return_value.fetch1.return_value = {
+                "tool": "SLEAP",
+                "params": params,
+                "skeleton_id": None,
+                "model_params_id": "parent_params",
+            }
+            mock_params.return_value.get_accepted_params.return_value = {
+                "run_name"
+            }
+            mock_sel.return_value.__and__.return_value.fetch1.return_value = (
+                None
+            )
+
+            model.train({"model_id": "parent_model"}, **overrides)
+
+            if not mock_params.return_value.insert1.called:
+                return None
+            return mock_params.return_value.insert1.call_args[0][0]["params"]
+
+    def test_inherited_run_name_is_replaced(self, model):
+        """An explicit parent run_name would collide; the child gets its own."""
+        child = self._derive(model, {"run_name": "parents_run"})
+
+        assert child["run_name"] != "parents_run"
+        assert child["run_name"].startswith("run-")
+
+    def test_caller_supplied_run_name_wins(self, model):
+        child = self._derive(
+            model, {"run_name": "parents_run"}, run_name="mine"
+        )
+
+        assert child["run_name"] == "mine"
+
+    def test_absent_run_name_is_not_invented(self, model):
+        """With no run_name the trainer's per-selection default applies."""
+        assert self._derive(model, {"max_epochs": 5}) is None
