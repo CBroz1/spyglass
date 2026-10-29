@@ -642,6 +642,9 @@ class TestModelTrain:
             mock_sel.return_value.__and__.return_value.__bool__.return_value = (
                 True  # selection exists
             )
+            # train() checks the key against the real heading before
+            # restricting, so the mock has to declare these.
+            mock_sel.heading.names = set(sel_key)
 
             out = model.train(sel_key)
 
@@ -660,11 +663,31 @@ class TestModelTrain:
             patch.object(type(model), "__and__", return_value=no_row),
             patch("spyglass.position.v2.train.ModelSelection") as mock_sel,
         ):
+            mock_sel.heading.names = {"model_params_id", "tool"}
             mock_sel.return_value.__and__.return_value.__bool__.return_value = (
                 False
             )
             with pytest.raises(ValueError, match="Nothing to train"):
-                model.train({"model_id": "nonexistent"})
+                model.train({"model_params_id": "nonexistent"})
+
+    def test_train_unknown_model_id_does_not_populate(self, model, stub_model):
+        """An unknown model_id must not reach the fresh-train branch.
+
+        `ModelSelection` has no `model_id`, so restricting it on one matches
+        every row; `stub_model` guarantees at least one exists. Against the
+        real tables the old code therefore populated unrelated selections and
+        only then failed, instead of reporting the unknown id.
+        """
+        with patch.object(model, "populate") as mock_populate:
+            with pytest.raises(ValueError, match="not part of ModelSelection"):
+                model.train({"model_id": "pv2_t9_no_such_model"})
+
+        mock_populate.assert_not_called()
+
+    def test_train_reports_the_unknown_attribute(self, model, stub_model):
+        """The message names what made the key unusable."""
+        with pytest.raises(ValueError, match=r"\['model_id'\]"):
+            model.train({"model_id": "pv2_t9_no_such_model"})
 
 
 class TestModelMetadataRegistration:
