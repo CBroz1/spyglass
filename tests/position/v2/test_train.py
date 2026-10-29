@@ -1003,3 +1003,65 @@ class TestNovelBodypartInsertion:
 
         message = str(err.value)
         assert "fooBar" in message and "foo_bar" in message
+
+
+class TestRankComparableMetrics:
+    """Scores are ordered only against the same metric.
+
+    `test_error_p` excludes predictions below a confidence cutoff, so it is
+    systematically lower than `test_error`. Sorting on the value alone let a
+    p-cutoff score outrank a better full-test score.
+    """
+
+    @staticmethod
+    def _rank(sgp, rows):
+        from spyglass.position.v2.train import Model
+
+        return Model._rank_model_rows(rows)
+
+    def test_p_cutoff_does_not_outrank_full_test(self, sgp):
+        ranked = self._rank(
+            sgp,
+            [
+                {"model_id": "p_only", "evaluation": {"test_error_p": 1.0}},
+                {"model_id": "full", "evaluation": {"test_error": 5.0}},
+            ],
+        )
+        # The full-test model ranks first despite the larger number.
+        assert [r["model_id"] for r in ranked] == ["full", "p_only"]
+
+    def test_within_a_metric_lower_is_better(self, sgp):
+        ranked = self._rank(
+            sgp,
+            [
+                {"model_id": "worse", "evaluation": {"test_error": 9.0}},
+                {"model_id": "better", "evaluation": {"test_error": 2.0}},
+            ],
+        )
+        assert [r["model_id"] for r in ranked] == ["better", "worse"]
+
+    def test_p_cutoff_group_is_internally_ordered(self, sgp):
+        ranked = self._rank(
+            sgp,
+            [
+                {"model_id": "p_worse", "evaluation": {"test_error_p": 8.0}},
+                {"model_id": "p_better", "evaluation": {"test_error_p": 3.0}},
+            ],
+        )
+        assert [r["model_id"] for r in ranked] == ["p_better", "p_worse"]
+
+    def test_metric_is_reported(self, sgp):
+        ranked = self._rank(
+            sgp, [{"model_id": "m", "evaluation": {"test_error_p": 1.0}}]
+        )
+        assert ranked[0]["metric"] == "test_error_p"
+
+    def test_unscored_still_sorts_last(self, sgp):
+        ranked = self._rank(
+            sgp,
+            [
+                {"model_id": "none", "evaluation": None},
+                {"model_id": "p_only", "evaluation": {"test_error_p": 1.0}},
+            ],
+        )
+        assert [r["model_id"] for r in ranked] == ["p_only", "none"]
