@@ -852,6 +852,60 @@ class TestModelEvaluation:
         with pytest.raises(ValueError, match="Model not found"):
             model.evaluate({"model_id": "nonexistent"})
 
+    def test_sleap_evaluates_without_deeplabcut(self, model, monkeypatch):
+        """DLC's absence must not block a SLEAP model.
+
+        `evaluate` dispatches on tool and `SLEAPStrategy.evaluate_model`
+        exists, but the `evaluate_network is None` check ran first and
+        reported DeepLabCut as required for every tool.
+        """
+        import spyglass.position.v2.train as train_mod
+
+        monkeypatch.setattr(train_mod, "evaluate_network", None)
+
+        restricted = MagicMock()
+        restricted.fetch1.return_value = {
+            "model_id": "m-sleap",
+            "model_params_id": "mp-sleap",
+            "tool": "SLEAP",
+            "vid_group_id": "v",
+            "model_selection_id": "s",
+        }
+
+        with (
+            patch.object(type(model), "__and__", return_value=restricted),
+            patch("spyglass.position.v2.train.ModelParams") as mock_mp,
+            patch(
+                "spyglass.position.v2.train.ToolStrategyFactory"
+            ) as mock_factory,
+        ):
+            mock_mp.return_value.__and__.return_value.fetch1.return_value = {
+                "tool": "SLEAP",
+                "params": {"model_type": "single_instance"},
+            }
+            strategy = mock_factory.create_strategy.return_value
+            strategy.supports_training = True
+            strategy.evaluate_model.return_value = {"test_error": 1.5}
+
+            result = model.evaluate({"model_id": "m-sleap"})
+
+        mock_factory.create_strategy.assert_called_once_with("SLEAP")
+        assert result == {"test_error": 1.5}
+
+    def test_dlc_evaluation_still_requires_deeplabcut(self, model, monkeypatch):
+        """The check moved into the DLC path rather than being dropped."""
+        import spyglass.position.v2.train as train_mod
+
+        monkeypatch.setattr(train_mod, "evaluate_network", None)
+
+        with pytest.raises(ImportError, match="evaluate_network"):
+            model._evaluate_dlc_model(
+                {},
+                {"params": {"project_path": "/nonexistent"}},
+                False,
+                True,
+            )
+
 
 class TestTrainingHistory:
     """Test training history extraction and visualization."""
