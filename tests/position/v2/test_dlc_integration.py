@@ -303,12 +303,22 @@ class TestDLCFullImport:
         assert key1["model_id"] == key2["model_id"]
 
     def test_explicit_model_id_is_used(
-        self, model, dlc_project_config, dlc_bootstrapped_session
+        self, model, dlc_project_config, dlc_bootstrapped_session, tmp_path
     ):
-        """An explicit model_id wins over the generated one."""
-        model_key = model.load(
-            str(dlc_project_config), model_id="pv2_d1_custom_id"
-        )
+        """An explicit model_id wins over the generated one.
+
+        Imports a copy of the project: `load` returns an existing Model when
+        one is already registered on the path, and other tests in this file
+        register one on the shared project.
+        """
+        import shutil
+
+        project = tmp_path / "explicit_id_project"
+        shutil.copytree(Path(dlc_project_config).parent, project)
+        cfg = project / Path(dlc_project_config).name
+
+        model_key = model.load(str(cfg), model_id="pv2_d1_custom_id")
+
         assert model_key["model_id"] == "pv2_d1_custom_id"
 
     def test_load_model_path_stored(
@@ -323,7 +333,7 @@ class TestDLCFullImport:
 class TestLoadUntrainedProject:
     """A project holding no weights registers a selection, not a Model.
 
-    `_project_training_mode` reports `inference_only` both for a TensorFlow
+    `project_training_mode` reports `inference_only` both for a TensorFlow
     project that can infer and for one with no weights, which can do neither.
     A Model row for the latter claims a capability it does not have.
     """
@@ -390,15 +400,19 @@ class TestLoadUntrainedProject:
 
     def test_has_weights_detects_both_engines(self, model, tmp_path):
         """PyTorch writes `snapshot-*.pt`; TensorFlow writes a `*.index`."""
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
         for name in ("snapshot-010.pt", "snapshot-010.index"):
             project = tmp_path / name.replace(".", "_")
             train = project / "dlc-models" / "iteration-0" / "m" / "train"
             train.mkdir(parents=True)
             cfg = {"project_path": str(project)}
 
-            assert not model._project_has_weights(cfg, project / "config.yaml")
+            assert not DLCStrategy.project_has_weights(
+                cfg, project / "config.yaml"
+            )
             (train / name).touch()
-            assert model._project_has_weights(cfg, project / "config.yaml")
+            assert DLCStrategy.project_has_weights(cfg, project / "config.yaml")
 
 
 class TestLoadVidFileMatches:

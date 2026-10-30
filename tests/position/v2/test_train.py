@@ -857,11 +857,12 @@ class TestModelEvaluation:
 
         `evaluate` dispatches on tool and `SLEAPStrategy.evaluate_model`
         exists, but the `evaluate_network is None` check ran first and
-        reported DeepLabCut as required for every tool.
+        reported DeepLabCut as required for every tool. The check now lives
+        in `DLCStrategy.evaluate_model`, so the SLEAP path cannot reach it.
         """
-        import spyglass.position.v2.train as train_mod
+        import spyglass.position.utils.tool_strategy_dlc as dlc_mod
 
-        monkeypatch.setattr(train_mod, "evaluate_network", None)
+        monkeypatch.setattr(dlc_mod, "evaluate_network", None)
 
         restricted = MagicMock()
         restricted.fetch1.return_value = {
@@ -894,14 +895,15 @@ class TestModelEvaluation:
 
     def test_dlc_evaluation_still_requires_deeplabcut(self, model, monkeypatch):
         """The check moved into the DLC path rather than being dropped."""
-        import spyglass.position.v2.train as train_mod
+        import spyglass.position.utils.tool_strategy_dlc as dlc_mod
 
-        monkeypatch.setattr(train_mod, "evaluate_network", None)
+        monkeypatch.setattr(dlc_mod, "evaluate_network", None)
 
         with pytest.raises(ImportError, match="evaluate_network"):
-            model._evaluate_dlc_model(
+            dlc_mod.DLCStrategy().evaluate_model(
                 {},
                 {"params": {"project_path": "/nonexistent"}},
+                model,
                 False,
                 True,
             )
@@ -1116,7 +1118,7 @@ class TestEvaluationResultsParsing:
     CONFIG = {"TrainingFraction": [0.95], "Task": "t", "date": "d"}
 
     def _parsed(self, sgp, monkeypatch, raw, shuffle=1, index=0):
-        from spyglass.position.v2 import train as mod
+        from spyglass.position.utils import tool_strategy_dlc as mod
 
         captured = {}
 
@@ -1126,7 +1128,7 @@ class TestEvaluationResultsParsing:
 
         monkeypatch.setattr(mod, "read_dlc_model_eval", _read)
         monkeypatch.setattr(mod, "load_yaml", lambda p: self.CONFIG)
-        out = mod.Model()._parse_dlc_evaluation_results(
+        out = mod.DLCStrategy()._parse_dlc_evaluation_results(
             Path("/proj"), shuffle, index
         )
         return out, captured
@@ -1163,7 +1165,7 @@ class TestEvaluationResultsParsing:
         assert captured == {"shuffle": 10, "index": 2}
 
     def test_absent_results_return_empty(self, sgp, monkeypatch):
-        from spyglass.position.v2 import train as mod
+        from spyglass.position.utils import tool_strategy_dlc as mod
 
         def _raise(*a, **k):
             raise RuntimeError("Evaluation folder not found")
@@ -1171,7 +1173,10 @@ class TestEvaluationResultsParsing:
         monkeypatch.setattr(mod, "read_dlc_model_eval", _raise)
         monkeypatch.setattr(mod, "load_yaml", lambda p: self.CONFIG)
 
-        assert mod.Model()._parse_dlc_evaluation_results(Path("/p"), 1, 0) == {}
+        parsed = mod.DLCStrategy()._parse_dlc_evaluation_results(
+            Path("/p"), 1, 0
+        )
+        assert parsed == {}
 
 
 class TestParamsIdentityIncludesSkeleton:

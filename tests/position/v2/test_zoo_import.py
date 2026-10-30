@@ -271,6 +271,8 @@ class TestTrainingMode:
         session-scoped and ships a snapshot, and earlier tests train into it,
         so asserting the absence of one there depended on suite order.
         """
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
         project = tmp_path / "no_snapshot_project"
         (project / "dlc-models" / "iteration-0" / "m" / "train").mkdir(
             parents=True
@@ -278,14 +280,16 @@ class TestTrainingMode:
         cfg_path = project / "config.yaml"
         cfg_path.touch()
 
-        mode = pv2_train.Model()._project_training_mode(
+        mode = DLCStrategy.project_training_mode(
             {"project_path": str(project)}, cfg_path
         )
         assert mode == "inference_only"
 
     def test_tensorflow_project_is_inference_only(self, pv2_train):
         """DLC-TF continuation raises NotImplementedError -- say so up front."""
-        mode = pv2_train.Model()._project_training_mode(
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
+        mode = DLCStrategy.project_training_mode(
             {"engine": "tensorflow", "project_path": "/nonexistent"},
             "/nonexistent/config.yaml",
         )
@@ -527,7 +531,9 @@ class TestLoadDispatch:
         Such a model must import as `inference_only` rather than let the user
         discover the dead end at train time.
         """
-        mode = pv2_train.Model()._zoo_training_mode("dlcrnet")
+        from spyglass.position.utils.tool_strategies import DLCStrategy
+
+        mode = DLCStrategy.zoo_training_mode("dlcrnet")
         assert mode == "inference_only"
 
     def test_second_import_not_blocked_by_reuse_guard(
