@@ -3,27 +3,26 @@
 ## Overview
 
 Position pipelines in Spyglass turn raw video into time-stamped behavioral
-variables — centroid (x, y), head orientation (radians), and velocity (cm/s) —
-that can be aligned with neural recordings for downstream decoding or
-linearization.
+variables: centroid (x, y), head orientation (radians), and velocity (cm/s).
+These align with neural recordings for downstream decoding or linearization.
 
 ### What a position pipeline does
 
-1. **Pose estimation** — A trained keypoint model (DeepLabCut, SLEAP, or any
+1. **Pose estimation.** A trained keypoint model (DeepLabCut, SLEAP, or any
     ndx-pose–compatible tool) runs on each video frame and outputs per-bodypart
     (x, y, likelihood) time series.
-2. **Likelihood filtering** — Frames where the model's confidence is below a
+2. **Likelihood filtering.** Frames where the model's confidence is below a
     threshold are treated as missing data and interpolated over.
-3. **Bodypart smoothing** — Each bodypart trajectory is independently
+3. **Bodypart smoothing.** Each bodypart trajectory is independently
     interpolated across short gaps and smoothed with a moving average, removing
     jitter before orientation or centroid are calculated.
-4. **Orientation** — A chosen pair (or triplet) of bodyparts defines the
-    animal's head direction at each frame.
-5. **Centroid** — One or more bodyparts are combined into a single (x, y)
+4. **Orientation.** A chosen pair (or triplet) of bodyparts defines the animal's
+    head direction at each frame.
+5. **Centroid.** One or more bodyparts are combined into a single (x, y)
     position estimate for the animal.
-6. **Centroid smoothing** — The centroid is interpolated and smoothed a second
+6. **Centroid smoothing.** The centroid is interpolated and smoothed a second
     time, giving a clean positional trajectory.
-7. **Velocity** — 2D velocity and scalar speed are computed from the smoothed
+7. **Velocity.** 2D velocity and scalar speed are computed from the smoothed
     centroid using `np.gradient` (central differences) and optionally smoothed
     with a Gaussian kernel.
 
@@ -47,10 +46,10 @@ cleaner three-step flow: `PoseEstim → PoseV2 → PositionOutput`.
 
 DeepLabCut 3.x defaults to the **PyTorch** engine
 (`deeplabcut.compat.DEFAULT_ENGINE = Engine.PYTORCH`), and Position V2
-standardizes on it. V2's code is **engine-agnostic** — DLC 3.x supports both the
+standardizes on it. V2's code is **engine-agnostic**: DLC 3.x supports both the
 PyTorch and TensorFlow engines, and V2 dispatches to whichever a model was
-trained with — so V2 does not strictly *need* PyTorch. But PyTorch is the
-recommended and better-supported path, chiefly for **dependency coexistence**.
+trained with, so PyTorch is not strictly required. It is the recommended and
+better-supported path, chiefly for **dependency coexistence**.
 
 The TensorFlow backend forces tight, conflicting version pins that collide with
 the rest of the modern scientific-Python stack and with the GPU runtimes
@@ -65,16 +64,16 @@ Spyglass already loads (the rest of Spyglass pulls in `jax` via
     would line up each require `numpy 2`. No single set of versions satisfies
     all three.
 - **Keras / tf-keras wedge.** TensorFlow 2.16+ ships Keras 3, which DeepLabCut's
-    TF compat layer cannot load without `tf-keras` — the loader recurses
+    TF compat layer cannot load without `tf-keras`. The loader recurses
     infinitely (a `RecursionError` at import) unless you also set
     `TF_USE_LEGACY_KERAS=1` and install `tf-keras`.
 
 The PyTorch engine has none of these problems: it coexists with modern `numpy`
 and `jax`, keeps the whole Spyglass stack in one working environment, and is
 DeepLabCut's actively-developed default. It is also the better-supported path
-inside Spyglass — continued training resumes cleanly from a parent snapshot on
-PyTorch (`train_network(snapshot_path=…)`), whereas the TensorFlow weight-resume
-mechanism (`init_weights` in `pose_cfg`) is not exposed as a training kwarg.
+inside Spyglass: continued training resumes from a parent snapshot on PyTorch
+(`train_network(snapshot_path=…)`), while the TensorFlow weight-resume mechanism
+(`init_weights` in `pose_cfg`) is not exposed as a training kwarg.
 
 If you are locked to a TensorFlow-trained DLC model, run that inference in a
 **separate** environment (no `jax` / `non_local_detector`) and ingest the
@@ -100,26 +99,26 @@ the single most common source of confusion when moving a V1 (TF) workflow to V2
 
 One epoch bundles `ceil(n_train_images / batch_size)` gradient steps, so the raw
 counters are **not** comparable: on a ~100-frame training set with
-`batch_size: 8`, epoch 200 is only ~2,400 gradient steps — nothing like 200 TF
-iterations, and nothing like the ~1e6 iterations of a full TF run. PyTorch
-generally reaches equal accuracy in **far fewer total updates**, which is why
-its default is 200 epochs rather than ~1M iterations.
+`batch_size: 8`, epoch 200 is only ~2,400 gradient steps, far from both 200 TF
+iterations and the ~1e6 iterations of a full TF run. PyTorch generally reaches
+equal accuracy in **far fewer total updates**, which is why its default is 200
+epochs rather than ~1M iterations.
 
 > **Migration pitfall.** Do not copy a TensorFlow `maxiters` value into the
 > PyTorch `epochs` field. A carried-over `epochs: 1030000` (the old TF default)
-> means ~1,000,000 passes over the data — a run that never sensibly terminates
-> and trains long past its best checkpoint. For Frank Lab–sized training sets,
-> ~200 epochs is the right scale.
+> means ~1,000,000 passes over the data, which never sensibly terminates and
+> trains long past its best checkpoint. For Frank Lab-sized training sets, ~200
+> epochs is the right scale.
 
 **How V2 handles this for you.** `Model.train(key, epochs=N)` is
 engine-agnostic: `DLCStrategy.apply_epochs` resolves the project's engine and
-writes the correct native knob — `epochs` for PyTorch (the DLC 3.x default),
+writes the correct native knob: `epochs` for PyTorch (the DLC 3.x default),
 `maxiters` for an explicit `engine: tensorflow` model. The `dlc_default`
 `ModelParams` set ships an explicit PyTorch budget (`epochs: 200`,
 `save_epochs: 25`), matching DLC's own defaults; pass `epochs=` (or bake a
 different value into `ModelParams`) to override. Declaring `epochs` in the tens
-of thousands raises a warning — that is the size of a TensorFlow `maxiters`
-value, not a PyTorch epoch count.
+of thousands raises a warning, since that is the scale of a TensorFlow
+`maxiters` value rather than a PyTorch epoch count.
 
 **How to read training progress.** For a PyTorch model, count epochs: the
 highest `snapshot-<epoch>.pt` (and `snapshot-best-<epoch>.pt`) in the model's
@@ -138,7 +137,7 @@ ______________________________________________________________________
 | -------------------------------- | --------------------- | ---------------------------------------------------- |
 | `BodyPart`                       | `BodyPart`            | Reclassed `Manual` → `Lookup`                        |
 | `DLCProject`                     | `Skeleton`            | Body-part set → explicit skeleton graph              |
-| —                                | `Skeleton.BodyPart`   | Part table; no V1 equivalent                         |
+| (none)                           | `Skeleton.BodyPart`   | Part table; no V1 equivalent                         |
 | `DLCModelTrainingParams`         | `ModelParams`         |                                                      |
 | `DLCModelTrainingSelection`      | `ModelSelection`      |                                                      |
 | `DLCModelTraining`               | `Model`               |                                                      |
@@ -150,7 +149,7 @@ ______________________________________________________________________
 | `DLCModelEvaluation`             | `Model`               |                                                      |
 | `DLCPoseEstimationSelection`     | `PoseEstimSelection`  |                                                      |
 | `DLCPoseEstimation`              | `PoseEstim`           |                                                      |
-| —                                | `PoseEstimParams`     | New; separates inference params (device, batch size) |
+| (none)                           | `PoseEstimParams`     | New; separates inference params (device, batch size) |
 | `DLCSmoothInterpParams`          | `PoseParams`          | Consolidated into `smoothing` sub-dict               |
 | `DLCCentroidParams`              | `PoseParams`          | Consolidated into `centroid` sub-dict                |
 | `DLCOrientationParams`           | `PoseParams`          | Consolidated into `orient` sub-dict                  |
@@ -167,10 +166,10 @@ ______________________________________________________________________
 | `DLCPosVideoParams`              | `VidFileGroup`        |                                                      |
 | `DLCPosVideoSelection`           | `VidFileGroup`        |                                                      |
 | `DLCPosVideo`                    | `PoseV2.make_video()` | No longer stored as a table                          |
-| `TrodesPosParams`                | —                     | No V2 equivalent                                     |
-| `TrodesPosSelection`             | —                     | No V2 equivalent                                     |
-| `TrodesPosV1`                    | —                     | No V2 equivalent                                     |
-| `TrodesPosVideo`                 | —                     | No V2 equivalent                                     |
+| `TrodesPosParams`                | (none)                | No V2 equivalent                                     |
+| `TrodesPosSelection`             | (none)                | No V2 equivalent                                     |
+| `TrodesPosV1`                    | (none)                | No V2 equivalent                                     |
+| `TrodesPosVideo`                 | (none)                | No V2 equivalent                                     |
 | `ImportedPose`                   | `ImportedPose`        | Unchanged; ingests external ndx-pose NWB files       |
 
 ### Key consolidations in V2
@@ -180,13 +179,12 @@ ______________________________________________________________________
     `smoothing`).
 - **`DLCModelInput` + `DLCModelSource` + `DLCModelParams`** → single
     `ModelParams`.
-- **Cohort pattern** (`DLCSmoothInterpCohort*`) eliminated — `PoseV2` handles
+- **Cohort pattern** (`DLCSmoothInterpCohort*`) eliminated. `PoseV2` handles
     multi-bodypart poses directly. Choosing *which* bodyparts feed
     centroid/orientation carries over to `PoseParams`; the cohort's ability to
     apply *different* smoothing parameters to different bodyparts within one run
-    was dropped — a review of production V1 usage found it was never used in
-    practice (a single parameter set was always applied uniformly across a
-    cohort's bodyparts).
+    was dropped. A review of production V1 usage found a single parameter set
+    always applied uniformly across a cohort's bodyparts.
 - **Trodes tables** have no V2 equivalent because V2 focuses on video-based pose
     estimation rather than hardware position sensors.
 
@@ -260,11 +258,11 @@ Gaussian-smooths that 1D speed signal.
 optionally Gaussian-smooths the (vx, vy) vector, then derives scalar speed as
 `√(vx² + vy²)`.
 
-**Why**: Smoothing a scalar speed signal is asymmetric — it can lower peaks but
+**Why**: Smoothing a scalar speed signal is asymmetric: it lowers peaks and
 cannot raise them back. Smoothing the 2D velocity vector before collapsing to
 speed preserves direction information and produces unbiased speed estimates.
-This was confirmed in T06 where V1's approach gave a `velocity corr = 0.912` vs.
-V2's corrected `corr > 0.999`.
+Against V1, the scalar-first order correlates at 0.912; smoothing the vector
+first reaches 0.999.
 
 **Migration**: Use `smoothing.velocity_smoothing_std_dev` (seconds) in
 `PoseParams` instead of V1's `speed_smoothing_std_dev`.
@@ -321,11 +319,10 @@ no boundary artifacts.
 so the device a run happened to use was baked into the stored, hashed
 parameters.
 
-**V2 behavior**: V2 does not treat the compute device as a pipeline parameter —
-the pose tool selects the best available device at run time (GPU if present,
-otherwise CPU), so the tutorials set no `device`/`gputouse` field. Device
-selection is a runtime/environment concern, not part of a run's scientific
-provenance: the same model and parameters yield the same result on GPU or CPU,
-so pinning a device into the content-addressed parameters would only fork
-otherwise-identical parameter sets. To force a specific GPU, use the environment
-(e.g. `CUDA_VISIBLE_DEVICES`) rather than a pipeline parameter.
+**V2 behavior**: V2 does not treat the compute device as a pipeline parameter.
+The pose tool selects the best available device at run time (GPU if present, CPU
+if not), so the tutorials set no `device`/`gputouse` field. Device selection is
+a runtime concern, not part of a run's scientific provenance: the same model and
+parameters give the same result on GPU or CPU, and keeping the device out of the
+content-addressed parameters keeps identical parameter sets as one row. To force
+a specific GPU, use the environment (e.g. `CUDA_VISIBLE_DEVICES`).

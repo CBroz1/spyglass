@@ -13,7 +13,7 @@
 # ---
 
 # %% [markdown]
-# ## Position Pipeline V2 — 3D Multi-Camera Calibration
+# ## Position Pipeline V2: 3D Multi-Camera Calibration
 #
 
 # %% [markdown]
@@ -34,8 +34,8 @@
 #
 # - To set up your Spyglass environment and database, see
 #   [the Setup notebook](./00_Setup.ipynb)
-# - For the single-camera (2D) Position V2 DLC workflow — training, model
-#   import, pose processing — see
+# - For the single-camera (2D) Position V2 DLC workflow: training, model
+#   import, pose processing; see
 #   [the Position V2 DLC notebook](./23_PositionV2_DLC_2D.ipynb)
 #
 # Most pose pipelines track an animal in a single camera's image plane (2D).
@@ -52,11 +52,11 @@
 #   and stores it in NWB.
 # - Fetch and visualize the 3D trajectory.
 #
-# **Example data.** We use the two-camera mouse-reaching dataset from the
+# **Example data.** This notebook uses the two-camera mouse-reaching dataset from the
 # [Anipose paper](https://doi.org/10.5061/dryad.nzs7h44s4)
 # (Karashchuk et al. 2021). It ships a real camera calibration, per-camera 2D
-# detections, the raw videos, and Anipose's own 3D output — so we can load a
-# real calibration and check our triangulation against a reference.
+# detections, the raw videos, and Anipose's own 3D output, so it can load a
+# real calibration and check triangulation against a reference.
 #
 # This notebook is **self-contained**: it downloads the example data and creates
 # its own (dummy) upstream session/model entries so it can run start to finish.
@@ -64,16 +64,16 @@
 # %% [markdown]
 # ### Table of Contents
 #
-# - [Setup](#Setup) — environment + database connection
-# - [The 3D tables](#Tables) — how calibration plugs into V2
-# - [Get example data](#Data) — download/extract the Anipose subset
-# - [Generate a calibration](#Generate) — produce a `calibration.toml`
-# - [Load the calibration](#Load) — into `CameraRig` / `Calibration`
-# - [Register videos](#Videos) — clip with DLC, pair with the calibration
-# - [3D pose estimation](#Pose) — triangulate via `PoseEstim`
-# - [Visualize](#Viz) — fetch and plot the 3D trajectory
-# - [Video](#Video) — reproject the 3D pose onto the camera videos
-# - [Cleanup](#Cleanup) — remove the tutorial entries
+# - [Setup](#Setup): environment + database connection
+# - [The 3D tables](#Tables): how calibration plugs into V2
+# - [Get example data](#Data): download/extract the Anipose subset
+# - [Generate a calibration](#Generate): produce a `calibration.toml`
+# - [Load the calibration](#Load): into `CameraRig` / `Calibration`
+# - [Register videos](#Videos): clip with DLC, pair with the calibration
+# - [3D pose estimation](#Pose): triangulate via `PoseEstim`
+# - [Visualize](#Viz): fetch and plot the 3D trajectory
+# - [Video](#Video): reproject the 3D pose onto the camera videos
+# - [Cleanup](#Cleanup): remove the tutorial entries
 
 # %% [markdown]
 # ## Setup <a id="Setup"></a>
@@ -107,7 +107,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 
-# DataJoint resolves your connection config when the first connection is made —
+# DataJoint resolves your connection config when the first connection is made,
 # from `dj_local_conf.json` in the working directory, `~/.datajoint_config.json`,
 # or `DJ_*` environment variables. See the Setup notebook (00_Setup) if you have
 # not configured one yet.
@@ -166,20 +166,20 @@ if missing_packages:
         "Missing packages required by this notebook:\n"
         + "\n".join(missing_packages)
     )
-print("Requirements OK — DeepLabCut, OpenCV, and TOML are available.")
+print("Requirements OK: DeepLabCut, OpenCV, and TOML are available.")
 
 # %% [markdown]
 # ## The 3D tables <a id="Tables"></a>
 #
 # The 3D path reuses the V2 pipeline and adds a small set of calibration tables:
 #
-# - **`CameraDevice`** (common) — one row per physical camera (the source of
+# - **`CameraDevice`** (common): one row per physical camera (the source of
 #   truth for camera identity).
-# - **`CameraRig`** + **`CameraRig.Camera`** — a rig groups cameras; each slot
+# - **`CameraRig`** + **`CameraRig.Camera`**: a rig groups cameras; each slot
 #   maps a zero-based `camera_index` to a `CameraDevice`.
-# - **`Calibration`** + **`Calibration.Camera`** — per-camera `intrinsics`
+# - **`Calibration`** + **`Calibration.Camera`**: per-camera `intrinsics`
 #   (`fx, fy, cx, cy, dist_coeffs`) and `extrinsics` (`R`, `t` camera→rig).
-# - **`VidFileGroup`** — groups the per-camera videos. Each `VidFileGroup.File`
+# - **`VidFileGroup`**: groups the per-camera videos. Each `VidFileGroup.File`
 #   carries a `camera_index`, and `VidFileGroup.Calibration` links the group to
 #   a `Calibration`.
 #
@@ -200,7 +200,7 @@ dj.Diagram(video) + dj.Diagram(train) + dj.Diagram(estim)
 # few dataset-specific steps: download once, extract only the members one
 # reaching trial needs, and reshape Anipose's multi-candidate 2D detections
 # into the tidy DLC-style `.h5` the pipeline loads. None of that is
-# Spyglass-specific, so it lives in a support helper — `fetch_anipose_example` —
+# Spyglass-specific, so it lives in a support helper, `fetch_anipose_example`,
 # that returns the resolved paths this notebook consumes. **Everything after
 # this cell is a user-facing step you would swap for your own data.**
 #
@@ -236,23 +236,23 @@ print("Session dir:", session_dir)
 #
 # A 3D calibration has two parts per camera:
 #
-# - **Intrinsics** — a single camera's optics: focal lengths, principal point,
+# - **Intrinsics**: a single camera's optics: focal lengths, principal point,
 #   lens distortion.
-# - **Extrinsics** — how the cameras sit relative to one another: the rotation
+# - **Extrinsics**: how the cameras sit relative to one another: the rotation
 #   `R` and translation `t` placing each camera in a shared rig coordinate frame.
 #
-# **You generate these with a calibration tool, not in Spyglass** — record a
+# **You generate these with a calibration tool, not in Spyglass.** Record a
 # known calibration board (checkerboard / ChArUco) moving through the shared
 # field of view, then run a calibration routine. Two common options:
 #
-# - **DeepLabCut 3D** — see the
+# - **DeepLabCut 3D**: see the
 #   [DLC 3D overview](https://deeplabcut.github.io/DeepLabCut/docs/Overviewof3D.html)
 #   (`deeplabcut.calibrate_cameras`).
-# - **Anipose** — see the
+# - **Anipose**: see the
 #   [Anipose tutorial](https://anipose.readthedocs.io/en/latest/tutorial.html);
-#   it writes a `calibration.toml` (the format our example dataset ships).
+#   it writes a `calibration.toml` (the format the example dataset ships).
 #
-# Below we **load the calibration that ships with the Anipose example** and
+# Below, **load the calibration that ships with the Anipose example** and
 # translate it into the dicts the `Calibration` table expects. The two tools use
 # slightly different conventions and units, which the helper below converts.
 #
@@ -326,7 +326,7 @@ for ci, cam in calib.items():
 # %% [markdown]
 # ## Load the calibration <a id="Load"></a>
 #
-# Each table depends on the one before it, so we insert in order:
+# Each table depends on the one before it, so insert in order:
 # `CameraDevice → CameraRig → CameraRig.Camera → Calibration →
 # Calibration.Camera`. Every tutorial row is prefixed with `demo` for easy
 # removal later (see [Cleanup](#Cleanup)).
@@ -391,17 +391,17 @@ for ci, cam in calib.items():
 # %% [markdown]
 # ## Register videos <a id="Videos"></a>
 #
-# Next we register the per-camera videos and group them. Two ideas matter here:
+# Next, register the per-camera videos and group them. Two ideas matter here:
 #
 # 1. **`camera_index` must agree with the calibration.** The video at
 #    `camera_index = i` is triangulated using the calibration at
-#    `camera_index = i`. We pair them **by camera name**: each index's
+#    `camera_index = i`. They pair **by camera name**: each index's
 #    calibration entry carries a name token (`cam1`/`cam2`) that must appear in
 #    the matching video's filename.
 # 2. **The video group is linked to its calibration** via
-#    `VidFileGroup.Calibration` — the link that flips `PoseEstim` into 3D mode.
+#    `VidFileGroup.Calibration`, the link that flips `PoseEstim` into 3D mode.
 #
-# We use Spyglass's dependency-light `ffmpeg_clip` helper to clip a short demo
+# Spyglass's dependency-light `ffmpeg_clip` helper clips a short demo
 # segment from each raw reach video by time. It shells out to `ffmpeg` directly
 # (no DeepLabCut needed) and writes `<stem>short.mp4` into the destination.
 
@@ -434,7 +434,7 @@ print(f"\nShared frame count: {n_frames}")
 #
 # `PoseEstim` stores results in an NWB analysis file derived from the session
 # NWB the videos belong to. In production you would register your real recording
-# with `insert_sessions()`. For this tutorial we create a minimal dummy session
+# with `insert_sessions()`. This tutorial creates a minimal dummy session
 # (a copy of the bundled `minirec` NWB) and register each clip as a `VideoFile`.
 
 # %%
@@ -445,7 +445,7 @@ if not nwb_path.exists():
     if not minirec_src.exists():
         raise FileNotFoundError(
             f"Bundled example NWB not found at {minirec_src}. It ships with the "
-            "Setup notebook (00_Setup) test data — run that first, or point "
+            "Setup notebook (00_Setup) test data. Run that first, or point "
             "raw_dir at a directory that contains it."
         )
     shutil.copy2(str(minirec_src), str(nwb_path))
@@ -530,22 +530,22 @@ VidFileGroup.File & {"vid_group_id": vid_group}
 # %% [markdown]
 # ## 3D pose estimation <a id="Pose"></a>
 #
-# In a full workflow you would have a trained DLC model and either run inference
+# In a full workflow you have a trained DLC model and either run inference
 # per camera (`task_mode='trigger'`) or load existing DLC `.h5` output
 # (`task_mode='load'`). The Anipose dataset already ships per-camera 2D
-# detections, so we use **`task_mode='load'`**.
+# detections, so use **`task_mode='load'`**.
 #
 # Two preparation steps:
 #
 # 1. **Place the 2D detections where `PoseEstim` looks.** The helper already
 #    reshaped Anipose's multi-candidate detections into clean DLC-style `.h5`;
-#    here we only truncate each to its short demo clip's frame count and name it
+#    each is truncated to its short demo clip's frame count and named
 #    `{clip_stem}DLC_*.h5`. **With your own data**, drop your model's per-camera
 #    DLC output into `output_dir` under that name instead.
-# 2. **Register a model.** We're loading detections rather than training, so we
+# 2. **Register a model.** Detections are loaded rather than trained, so the
 #    register a lightweight placeholder `Skeleton`/`ModelParams`/`Model`. (With
 #    your own data, import a real model as in the
-#    [DLC notebook](./23_PositionV2_DLC_2D.ipynb) — where you can also continue
+#    [DLC notebook](./23_PositionV2_DLC_2D.ipynb), where you can also continue
 #    training an existing model via `Model().train({'model_id': ...}, epochs=N)`.)
 
 # %%
@@ -650,7 +650,7 @@ df = (PoseEstim & estim_key).fetch1_dataframe()
 has_z = any(c[-1] == "z" for c in df.columns)
 if not has_z:
     raise RuntimeError(
-        "3D estimation produced no `z` columns — the pipeline fell back to the "
+        "3D estimation produced no `z` columns: the pipeline fell back to the "
         "2D path. Confirm the video group has >=2 cameras and a linked "
         "Calibration (VidFileGroup.Calibration)."
     )
@@ -676,7 +676,7 @@ sc = ax.scatter(
 ax.set_xlabel("X (cm)")
 ax.set_ylabel("Y (cm)")
 ax.set_zlabel("Z (cm)")
-ax.set_title(f"3D trajectory — {bp} (colored by frame)")
+ax.set_title(f"3D trajectory: {bp} (colored by frame)")
 fig.colorbar(sc, label="frame", shrink=0.6)
 plt.show()
 
@@ -685,7 +685,7 @@ plt.show()
 #
 # The dataset ships Anipose's own triangulation. The V2 path uses the same
 # standard triangulation math, so the two should agree to within rounding
-# (Anipose stores millimetres; V2 stores centimetres, so we rescale V2 by 10).
+# (Anipose stores millimetres; V2 stores centimetres, so V2 is rescaled by 10).
 
 # %%
 ref = pd.read_csv(example["reference_3d"]).iloc[:n_frames]
@@ -709,9 +709,9 @@ print(
 # validation is to **reproject** the triangulated 3D points back into each
 # camera image (through the same calibration) and overlay them on the real
 # video. If the reprojected markers stay on the animal, both the 3D
-# reconstruction and the calibration are sound — closing the 2D → 3D → 2D loop.
+# reconstruction and the calibration are sound, closing the 2D → 3D → 2D loop.
 #
-# We render with DeepLabCut's built-in `create_video`, feeding it a small h5 of
+# Rendering uses DeepLabCut's built-in `create_video`, fed a small h5 of
 # reprojected points. DLC's native (OpenCV-backed) writer is faster and lighter
 # than a per-frame matplotlib renderer.
 
@@ -790,13 +790,13 @@ if CLEANUP:
         (CameraDevice & {"camera_name": f"{demo}_{cam['name']}"}).delete(**safe)
     print("Tutorial rows removed.")
 else:
-    print("CLEANUP is False — tutorial rows left in place.")
+    print("CLEANUP is False; tutorial rows left in place.")
 
 # %% [markdown]
 # ### What's next
 #
 # - For per-bodypart smoothing, orientation, centroid, and velocity on the
 #   triangulated pose, continue to `PoseV2` (see the
-#   [DLC notebook](./23_PositionV2_DLC_2D.ipynb) — it reads 3D input transparently).
+#   [DLC notebook](./23_PositionV2_DLC_2D.ipynb); it reads 3D input transparently).
 # - With your own rig: generate a `calibration.toml` (DLC 3D or Anipose), then
 #   repeat [Load the calibration](#Load) onward with your videos.

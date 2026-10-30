@@ -250,15 +250,14 @@ The validator will check:
 **Cause:**
 
 `jax` and `jaxlib` are distributed as two separate packages that must be kept at
-compatible versions — `jax` checks `jaxlib` at import time and raises if the
-pair is incompatible. They commonly drift out of sync when several stacks share
-one environment: the decoding/MoSeq dependencies pull in `jax`, and a later
+compatible versions. `jax` checks `jaxlib` at import time and raises on an
+incompatible pair. They commonly drift out of sync when several stacks share one
+environment: the decoding/MoSeq dependencies pull in `jax`, and a later
 `pip install` of an unrelated package (for example the DeepLabCut/PyTorch pose
 stack) bumps `jaxlib` to the newest wheel while `jax` stays pinned to an older
 version. DeepLabCut does not depend on `jax` itself; it is only the install that
-knocks `jaxlib` loose. Note that the pose pipelines (DeepLabCut/SLEAP) never
-require `jax`, so an environment dedicated to pose estimation should not contain
-it at all.
+knocks `jaxlib` loose. The pose pipelines (DeepLabCut/SLEAP) never require
+`jax`, so an environment dedicated to pose estimation should not contain it.
 
 **Solutions:**
 
@@ -276,17 +275,17 @@ it at all.
     pip install --upgrade "jax[cpu]==0.4.30" "jaxlib==0.4.30"
     ```
 
-    Choose a version your `jax`-dependent packages support — look up the
-    compatible pairing in the externally-maintained references below.
+    Choose a version your `jax`-dependent packages support, using the
+    externally-maintained references below for the compatible pairing.
 
 3. **Find the correct pairing.** The authoritative, externally-managed source is
     the JAX project itself:
 
-    - [JAX changelog](https://docs.jax.dev/en/latest/changelog.html) — records
-        the minimum/compatible `jaxlib` version for each `jax` release (e.g. "the
+    - [JAX changelog](https://docs.jax.dev/en/latest/changelog.html) records the
+        minimum compatible `jaxlib` version for each `jax` release (e.g. "the
         minimum jaxlib version of this release is 0.4.27").
     - [JAX & jaxlib versioning policy](https://docs.jax.dev/en/latest/jep/9419-jax-versioning.html)
-        — explains the compatibility rules and the shared-version-number scheme.
+        explains the compatibility rules and the shared-version-number scheme.
 
 4. **Isolate conflicting stacks.** Because the `jax` (decoding/MoSeq) and
     PyTorch (DeepLabCut/SLEAP) dependency trees conflict, keep them in separate
@@ -310,9 +309,9 @@ DeepLabCut 3.x uses **PyTorch** and does not need TensorFlow. Meanwhile the rest
 of Spyglass pulls in `jax` (via `non_local_detector`). TensorFlow and `jaxlib`
 each bundle their own XLA runtime and collide when both load in one process, and
 TensorFlow's `ml-dtypes` pin holds `jax` to an old version. V2's code is
-engine-agnostic — see
-[Position → Why V2 uses the PyTorch backend](./POSITION.md); the conflict is
-purely about the two dependency stacks coexisting.
+engine-agnostic; see
+[Position → Why V2 uses the PyTorch backend](./POSITION.md). The conflict is
+only about the two dependency stacks coexisting.
 
 **Solutions:**
 
@@ -351,7 +350,7 @@ purely about the two dependency stacks coexisting.
     `ImportedPose`.
 
 **Migrating training parameters, too:** the PyTorch engine counts training
-length in **epochs**, not TensorFlow **iterations** — do not reuse a V1
+length in **epochs**, not TensorFlow **iterations**. Do not reuse a V1
 `maxiters` value (e.g. `1030000`) as PyTorch `epochs`. See
 [Position → Training parameters: TensorFlow → PyTorch](./POSITION.md) for the
 full knob mapping (`maxiters`→`epochs`, `saveiters`→`save_epochs`) and the

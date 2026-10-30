@@ -116,8 +116,8 @@ COMMIT
 
 Three consequences worth designing around:
 
-- **`make_fetch` runs twice per key.** Anything expensive in it — reading a
-    large file, fetching a big DataFrame — costs double, and the result is
+- **`make_fetch` runs twice per key.** Anything expensive in it, such as reading
+    a large file or fetching a big DataFrame, costs double, and the result is
     hashed (via `deepdiff.DeepHash`) on both passes. Keep it to the queries you
     genuinely need.
 

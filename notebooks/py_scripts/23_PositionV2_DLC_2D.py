@@ -166,7 +166,7 @@ print("All imports successful!")
 # %% [markdown]
 # ### Check the environment
 #
-# Catches common dependency issues before training or inference — e.g. a
+# Catches common dependency issues before training or inference, e.g. a
 # conflicting deep-learning backend on the GPU. If anything is flagged, follow
 # the printed fix (or rebuild from `environments/environment_dlc.yml`), then
 # restart the kernel.
@@ -199,8 +199,8 @@ dj.Diagram(video) + dj.Diagram(train) + dj.Diagram(estim) + dj.Diagram(PoseV2)
 #
 # | Situation | Path |
 # |---|---|
-# | You want to **train a new model** from videos already in Spyglass | **Path A** — [Train a new model](#PathA) |
-# | You already have a **pre-trained DLC or SLEAP model** | **Path B** — [Import a pre-trained model](#PathB) |
+# | You want to **train a new model** from videos already in Spyglass | **Path A**: [Train a new model](#PathA) |
+# | You already have a **pre-trained DLC or SLEAP model** | **Path B**: [Import a pre-trained model](#PathB) |
 #
 # Both paths converge at the [Pose Estimation](#PoseEstim) section below.
 
@@ -216,7 +216,7 @@ dj.Diagram(video) + dj.Diagram(train) + dj.Diagram(estim) + dj.Diagram(PoseV2)
 # The tutorial creates a few dummy Spyglass entries so it can run without a
 # recorded session. That helper ships with the Spyglass source checkout (not the
 # pip package), so this step needs a git clone of the repo. It is NOT needed for
-# real analysis — register your own session instead (see the Setup notebook).
+# real analysis. Register your own session instead (see the Setup notebook).
 import sys
 
 import spyglass
@@ -234,7 +234,7 @@ if str(tests_dir) not in sys.path:
     sys.path.insert(0, str(tests_dir))
 from make_example_dlc_project import bootstrap_from_video_paths  # noqa: E402
 
-# Shared state — set by whichever path you run (A: train, B: import). Both the
+# Shared state, set by whichever path you run (A: train, B: import). Both the
 # Pose Estimation and pose-processing sections read these, so they are defined
 # up front to keep the two paths independent.
 model_key = None
@@ -276,13 +276,13 @@ except ImportError as exc:
     ) from exc
 
 # %% [markdown]
-# ### Step 1 — Choose training videos
+# ### Step 1: Choose training videos
 #
 # Browse the `VideoFile` table to find recordings to train on. Each row is one
 # video file registered in Spyglass.
 
 # %%
-# Inspect available videos — pick the ones to train on
+# Inspect available videos, then pick the ones to train on
 VideoFile()
 
 # %% [markdown]
@@ -291,7 +291,7 @@ VideoFile()
 
 # %%
 # ── Choose your training videos ──────────────────────────────────────────────
-# Reference videos by session/epoch — VideoFile.get_abs_paths() resolves them.
+# Reference videos by session/epoch; VideoFile.get_abs_paths() resolves them.
 # Partial keys (nwb_file_name + epoch, no video_file_num) expand to all
 # camera angles recorded for that epoch.
 # training_video_list = [
@@ -303,7 +303,7 @@ VideoFile()
 training_video_list = []  # overridden in the bootstrap block below
 
 # %% [markdown]
-# ### Step 2 — Define body parts and skeleton
+# ### Step 2: Define body parts and skeleton
 
 # %%
 # Body parts your model will track. Each name must already exist in the
@@ -311,10 +311,10 @@ training_video_list = []  # overridden in the bootstrap block below
 training_bodyparts = ["whiteLED", "tailBase"]
 
 # %% [markdown]
-# ### Step 3 — Bootstrap tutorial session & create project
+# ### Step 3: Bootstrap tutorial session & create project
 #
 # <details>
-# <summary><b>Tutorial helper — not for production use</b></summary>
+# <summary><b>Tutorial helper, not for production use</b></summary>
 #
 # `Model.create_project()` calls DLC to create a project folder and extract
 # frames. Later, `Model.load()` calls `VidFileGroup.create_from_dlc_config()`
@@ -334,7 +334,7 @@ training_bodyparts = ["whiteLED", "tailBase"]
 
 # %%
 # Path-A tutorial imports. The bootstrap helper and shared-state variables come
-# from "Shared state for both paths" above; here we add only the
+# from "Shared state for both paths" above; this adds only the
 # training-specific helpers.
 import yaml
 from make_example_dlc_project import make_dlc_project  # noqa: E402
@@ -370,7 +370,7 @@ nwb_file_name, inf_vid_path = bootstrap_from_video_paths(
 print(f"  nwb_file_name  : {nwb_file_name}")
 print(f"  inf_vid_path   : {inf_vid_path}")
 
-# Use the registered videos as our training list
+# Use the registered videos as the training list
 training_video_list = [{"nwb_file_name": nwb_file_name, "epoch": 1}]
 
 
@@ -399,7 +399,7 @@ print("Next: label the extracted frames, then return to train below.")
 
 # ── Tutorial shortcut: seed synthetic labels so training can run ──────────────
 # In a real workflow you would label frames with the DLC GUI or napari.
-# Here we write dummy x/y annotations so Model.populate() does not error.
+# Dummy x/y annotations, so Model.populate() does not error.
 from make_example_dlc_project import seed_labeled_data  # noqa: E402
 
 seed_labeled_data(config_path)
@@ -411,7 +411,7 @@ print("Synthetic labels written (tutorial only - replace with real labels).")
 # https://lorenfranklab.github.io/spyglass/latest/GettingStarted/POSITION/
 
 # %% [markdown]
-# ### Step 4 — Label frames (manual step)
+# ### Step 4: Label frames (manual step)
 #
 # After `create_project()` finishes, DLC has extracted frames into
 # `labeled-data/` inside the project folder. Label them with the DLC GUI or the
@@ -428,13 +428,13 @@ print("Synthetic labels written (tutorial only - replace with real labels).")
 # Return here once labeling is complete.
 
 # %% [markdown]
-# ### Step 5 — Train the model
+# ### Step 5: Train the model
 #
 # After labeling, insert `ModelParams` and `ModelSelection`, then call
 # `Model.populate()`:
 
 # %%
-# Training parameters — use epochs=1/save_epochs=1 for the fastest possible demo.
+# Training parameters: epochs=1/save_epochs=1 gives the fastest demo.
 # DLC 3.x PyTorch backend: `epochs` overrides `maxiters` and controls epochs
 # directly; `save_epochs` controls checkpoint frequency.
 train_params = {
@@ -472,7 +472,7 @@ selection_key = {
 ModelSelection.insert1(selection_key, skip_duplicates=True)
 
 if len(Model & selection_key) > 0:
-    print(f"Model '{train_params_id}' already exists — skipping training")
+    print(f"Model '{train_params_id}' already exists, skipping training")
 else:
     print("Starting training (1 epoch) ...")
     # `Model().train()` is the unified training verb: given a fresh
@@ -496,7 +496,7 @@ print(f"model_key: {model_key['model_id']}")
 # On a machine with several GPUs, a bare `"cuda"` is resolved to the
 # *least-loaded* device, preferring one that is completely unused. This
 # matters on a shared cluster node: PyTorch reads a plain `"cuda"` as
-# `cuda:0` specifically, so without this step every job on the machine
+# `cuda:0` specifically, so absent this step every job on the machine
 # would pile onto GPU 0 and fail with an out-of-memory error while the
 # other cards sat idle. The chosen device is logged.
 #
@@ -508,7 +508,7 @@ print(f"model_key: {model_key['model_id']}")
 # ```
 #
 # Prefer `"cuda"` over a hardcoded `"cuda:0"`. An explicit index is
-# honored as given — which is the point of asking for one — but *which*
+# honored as given, which is the point of asking for one, but *which*
 # GPU is free changes from run to run, so a pinned index silently
 # reintroduces the same crowding problem. Name an index only when you
 # genuinely need that card.
@@ -516,7 +516,7 @@ print(f"model_key: {model_key['model_id']}")
 # </details>
 
 # %% [markdown]
-# ### Step 6 — Visualize training curves
+# ### Step 6: Visualize training curves
 
 # %%
 if model_key:
@@ -527,7 +527,7 @@ if model_key:
         print("No training history yet (expected for a 1-epoch demo).")
 
 # %% [markdown]
-# ### Step 7 — Continue / resume training (optional) <a id="ContinueTraining"></a>
+# ### Step 7: Continue / resume training (optional) <a id="ContinueTraining"></a>
 #
 # A model that underfit need not be retrained from scratch. The same
 # `Model().train()` verb resumes an existing model: pass a trained model's key
@@ -546,7 +546,7 @@ if model_key:
 # %% [markdown]
 # ## Path B: Import a Pre-Trained Model <a id="PathB"></a>
 #
-# **Goal**: Load an existing pre-trained model into Spyglass — import a
+# **Goal**: Load an existing pre-trained model into Spyglass, importing a
 # DeepLabCut project from its `config.yaml` and create video file groups for
 # analysis.
 #
@@ -555,9 +555,9 @@ if model_key:
 # %% [markdown]
 # Position V2 supports two import routes:
 #
-# 1. **DLC `config.yaml`** — import a DeepLabCut-trained model (the default
+# 1. **DLC `config.yaml`**: import a DeepLabCut-trained model (the default
 #    below), then run inference through the pipeline.
-# 2. **Pre-computed pose (ndx-pose NWB)** — ingest results from another tool
+# 2. **Pre-computed pose (ndx-pose NWB)**: ingest results from another tool
 #    (including **SLEAP**, or DLC `.h5` output) with `ImportedPose`; see the
 #    pointer at the end of this section.
 
@@ -584,7 +584,7 @@ if model_key:
 # ```
 
 # %% [markdown]
-# > **Session prerequisite** — `Model.load()` calls
+# > **Session prerequisite**: `Model.load()` calls
 # > `VidFileGroup.create_from_dlc_config()` internally. In production, run
 # > `insert_sessions('your_training_session.nwb')` before this step.
 # >
@@ -592,7 +592,7 @@ if model_key:
 # > entries so the import can proceed without a recorded session.
 
 # %%
-# Path B default — import a pre-trained DeepLabCut project from its config.yaml.
+# Path B default: import a pre-trained DeepLabCut project from config.yaml.
 # ────────────────────────────────────────────────────────────────────────────
 # If you completed Path A, model_key is already set and this block is skipped.
 #
@@ -724,7 +724,7 @@ if skeleton_id:
 # #### Pointer: pose already computed by another tool (ndx-pose NWB)
 #
 # If your results already exist as an **ndx-pose NWB file** (from SLEAP, DLC, or
-# any tool), skip training/inference here and use `ImportedPose` — the canonical
+# any tool), skip training/inference here and use `ImportedPose`, the canonical
 # entry point for pre-computed pose:
 # `insert_sessions("pose.nwb")` then `ImportedPose().insert_from_nwbfile("pose.nwb")`
 # (add `import_to_v2=True` to also register the V2 model tables). DLC `.h5`
@@ -763,11 +763,11 @@ if model_key is None:
 #
 # Inference in V2 follows a three-step Spyglass pattern:
 #
-# 1. **`PoseEstimParams`** — name a set of inference parameters
+# 1. **`PoseEstimParams`**: name a set of inference parameters
 #     (batch size, etc.)
-# 2. **`PoseEstimSelection`** — pair a model with a video group and choose
+# 2. **`PoseEstimSelection`**: pair a model with a video group and choose
 #     `task_mode='trigger'` (run inference) or `'load'` (read existing output)
-# 3. **`PoseEstim.populate()`** — executes inference and stores results in an
+# 3. **`PoseEstim.populate()`**: executes inference and stores results in an
 #     NWB file via ndx-pose
 #
 # > **`task_mode='load'` vs `ImportedPose`**: Use `task_mode='load'` when
@@ -776,12 +776,12 @@ if model_key is None:
 # > format from another pipeline.
 
 # %% [markdown]
-# ##### Step 1 — Inference parameters (`PoseEstimParams`)
+# ##### Step 1: Inference parameters (`PoseEstimParams`)
 #
 # Here `params_hash` uniquely identifies the parameter set; inserting a new
 # entry whose `params` match an existing row raises an error. The compute device
-# (GPU if present, else CPU — and the least-loaded GPU when there are several)
-# is chosen automatically at run time — you don't set it here. These parameters
+# (GPU if present, else CPU, and the least-loaded GPU when there are several)
+# is chosen automatically at run time; you don't set it here. These parameters
 # cover scientific settings like `batch_size`.
 
 # %%
@@ -797,7 +797,7 @@ print(f"Inserted PoseEstimParams '{params_id}'")
 PoseEstimParams & {"pose_estim_params_id": params_id}
 
 # %% [markdown]
-# ##### Step 2 — Estimation task (`PoseEstimSelection`)
+# ##### Step 2: Estimation task (`PoseEstimSelection`)
 #
 # Pose estimation uses **two separate `VidFileGroup` entries**:
 #
@@ -860,7 +860,7 @@ if inf_vid_group_key:
     )
 
 # %% [markdown]
-# ##### Step 3 — Run inference (`PoseEstim.populate()`)
+# ##### Step 3: Run inference (`PoseEstim.populate()`)
 #
 
 # %%
@@ -937,7 +937,7 @@ print(pose_df.head())
 
 # %% [markdown]
 #
-# **Goal**: Configure how raw pose data is processed into final trajectories —
+# **Goal**: Configure how raw pose data is processed into final trajectories:
 # using default parameters or a custom configuration matched to your setup.
 #
 # `PoseParams` stores configuration for:
@@ -968,9 +968,9 @@ print(pose_df.head())
 #
 # **Smoothing methods at a glance**:
 #
-# - `moving_avg` — causal boxcar; good general-purpose choice, little distortion
-# - `savgol` — Savitzky-Golay polynomial fit; preserves peak velocities better
-# - `gaussian` — symmetric Gaussian; best for display / offline analysis
+# - `moving_avg`: causal boxcar; good general-purpose choice, little distortion
+# - `savgol`: Savitzky-Golay polynomial fit; preserves peak velocities better
+# - `gaussian`: symmetric Gaussian; best for display / offline analysis
 #
 # **likelihood_thresh** controls which frames are treated as low-confidence and
 # interpolated over before smoothing. Typical values: `0.9` (strict) → `0.5`
@@ -1089,7 +1089,7 @@ PoseParams & {"params.smoothing.interp_params": "max_pts_to_interp"}
 
 # %% [markdown]
 #
-# **Goal**: Process raw pose estimates into final position trajectories — link
+# **Goal**: Process raw pose estimates into final position trajectories, linking
 # estimation results to processing parameters, run the pipeline (orientation,
 # centroid, velocity), and validate the result.
 
@@ -1099,7 +1099,7 @@ PoseParams & {"params.smoothing.interp_params": "max_pts_to_interp"}
 # Insert a `PoseSelection` row that links a `PoseEstim` result to a set of
 # `PoseParams`, then call `PoseV2.populate()` to run the processing pipeline.
 #
-# > **Prerequisite** — `PoseEstim` must be populated before inserting
+# > **Prerequisite**: `PoseEstim` must be populated before inserting
 # > `PoseSelection`. Both `PoseEstim` and `PoseV2` require the inference
 # > `VidFileGroup` to be linked to a registered `Nwbfile`. Verify with:
 # > ```python
@@ -1135,7 +1135,7 @@ print(processed_df.head())
 # %% [markdown]
 # ### Finding entries by recording session
 #
-# `PoseV2`'s key carries `vid_group_id`, not `nwb_file_name`/`epoch` — a video
+# `PoseV2`'s key carries `vid_group_id`, not `nwb_file_name`/`epoch`. A video
 # group is a *set* of videos, so the session does not ride down the primary
 # key the way it does for `DLCPosV1`. Use `fetch_by_epoch()`, which takes any
 # restriction valid on `TaskEpoch`:
@@ -1160,7 +1160,7 @@ print(processed_df.head())
 # raw join repeats each entry once per matching video.
 #
 # > **Careful:** `PoseV2 & {"nwb_file_name": ...}` does *not* work and does not
-# > raise — DataJoint silently ignores a restriction on an attribute the table
+# > raise: DataJoint silently ignores a restriction on an attribute the table
 # > does not have, so you get back *every* row.
 
 # %% [markdown]
@@ -1186,7 +1186,7 @@ if processed_df is None:
 
 # `PoseV2.fetch1_dataframe` builds a fixed set of columns (position_x/y,
 # orientation, velocity_x/y, speed) by construction, so no manual column
-# check is needed here — the method's contract (and its unit tests) guarantee
+# check is needed here: the method's contract (and its unit tests) guarantee
 # them.
 
 # Data summary
@@ -1203,7 +1203,7 @@ print(f"Duration: {time_range:.1f}s, Mean speed: {mean_speed:.1f} cm/s")
 # ## Data Analysis & Retrieval <a id="FetchData"></a>
 
 # %% [markdown]
-# **Goal**: Access processed position data for analysis and visualization —
+# **Goal**: Access processed position data for analysis and visualization:
 # retrieve it as pandas DataFrames or raw NWB objects and generate trajectory
 # and time-series plots.
 
@@ -1320,8 +1320,8 @@ fig = Model().plot_traininghistory(
 
 # %% [markdown]
 # If the loss curve suggests the model underfit (still decreasing, or accuracy
-# too low), you don't need to start over — resume training with more epochs. See
-# [Step 7 — Continue / resume training](#ContinueTraining):
+# too low), you don't need to start over. Resume training with more epochs. See
+# [Step 7: Continue / resume training](#ContinueTraining):
 # `Model().train({"model_id": model_key["model_id"]}, epochs=50)`.
 
 # %% [markdown]
@@ -1332,7 +1332,7 @@ fig = Model().plot_traininghistory(
 # Once `PoseV2` is populated, render an annotated video (keypoints, centroid,
 # and orientation overlaid on the source video) with
 # `(PoseV2() & pose_selection_key).make_video()`. Use `percent_frames` to render
-# only a fraction of the video — start small to preview before rendering the
+# only a fraction of the video. Start small to preview before rendering the
 # whole clip.
 
 # %%
@@ -1418,7 +1418,7 @@ else:
 #
 # **"CUDA out of memory"**
 # - If you pinned a device (`"cuda:0"`), drop the index and pass `"cuda"` so
-#   Spyglass can pick a free card — a hardcoded index does not move when that
+#   Spyglass can pick a free card; a hardcoded index does not move when that
 #   GPU is busy
 # - If every GPU is genuinely full, populate raises before inference starts,
 #   listing free memory per device: wait for another job, or use a `device:
@@ -1478,7 +1478,7 @@ else:
 #
 # Parameter tables (`ModelParams`, `PoseParams`, `PoseEstimParams`) store their
 # settings in native JSON columns, so you can query any sub-field directly with
-# dot notation — no custom iteration needed:
+# dot notation, with no custom iteration needed:
 #
 # ```python
 # ModelParams & {'params.learning_rate': 0.001}
@@ -1496,8 +1496,8 @@ else:
 #
 # ### SLEAP is supported
 #
-# SLEAP is fully supported in Position V2 — training, continued training, and
-# inference — through a dedicated `SLEAPStrategy`. Because SLEAP and DeepLabCut
+# SLEAP is fully supported in Position V2: training, continued training, and
+# inference, through a dedicated `SLEAPStrategy`. Because SLEAP and DeepLabCut
 # have conflicting dependencies, SLEAP work lives in its own notebook and
 # environment:
 #
