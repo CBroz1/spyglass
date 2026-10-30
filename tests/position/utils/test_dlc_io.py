@@ -633,7 +633,7 @@ class TestReformatDlcData:
 
     ``DLCProjectReader.body_parts`` returned ``columns.levels[0]``, and
     ``bodyparts or <default>`` evaluates that Index for truth, raising
-    "ambiguous truth value" -- which broke ``.data`` and
+    "ambiguous truth value", which broke ``.data`` and
     ``.reformat_rawdata()`` for ordinary DLC output.
     """
 
@@ -679,8 +679,8 @@ class TestImportAnalyzeVideos:
     """``import_analyze_videos`` must load only the engine's own backend.
 
     DLC 2.x ships no PyTorch backend and a torch-only DLC 3.x install ships no
-    TensorFlow one, so each case poisons the backend that would be absent --
-    importing it raises -- and asserts the other one is still reached.
+    TensorFlow one, so each case poisons the absent backend, making its import
+    raise, and asserts the other one is still reached.
     """
 
     @pytest.mark.parametrize(
@@ -799,7 +799,7 @@ class TestToLegacyEvalFields:
     def test_absent_modern_column_is_none_not_a_stand_in(self):
         """A column the file lacks must not acquire a plausible number.
 
-        `DLCModelEvaluation` persists this dict, so a default would be stored
+        `DLCModelEvaluation` persists this dict, so a default is stored
         as though it had been measured.
         """
         from spyglass.position.utils.dlc_io import to_legacy_eval_fields
@@ -814,7 +814,7 @@ class TestToLegacyEvalFields:
 class TestParseScorerSnapshot:
     """`parse_scorer_snapshot` must span DLC 2.x and 3.x scorer formats.
 
-    DLC only ever *writes* the scorer name — it ships no parser, and neither
+    DLC only writes the scorer name. It ships no parser, and neither
     engine records the iteration count anywhere else in the metadata pickle.
     These are the shapes its own formatters can emit.
     """
@@ -902,7 +902,7 @@ class TestMultiAnimalOptIn:
         return path, scorer
 
     def test_default_rejects_multi_animal(self, ma_h5, parse_dlc_h5_output):
-        """Guard stays on by default -- the message must name the cause."""
+        """Guard stays on by default, and the message names the cause."""
         path, _ = ma_h5
         with pytest.raises(ValueError, match="4 levels"):
             parse_dlc_h5_output(path)
@@ -928,7 +928,7 @@ class TestMultiAnimalOptIn:
     ):
         """>1 individual is passed through, not silently narrowed.
 
-        Picking one animal here would be inventing an answer. The user opted
+        Picking one animal here invents an answer. The user opted
         into unsupported territory; let the downstream step be the one to fail.
         """
         path, _ = ma_h5_two

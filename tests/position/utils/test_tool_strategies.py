@@ -228,7 +228,7 @@ class TestToolStrategyFactory:
         """Create ToolStrategyFactory instance with registry isolation.
 
         ``register_strategy`` mutates the class-level ``_strategies`` dict, so
-        snapshot and restore it around each test. Without this, mock tools
+        snapshot and restore it around each test. Unrestored, mock tools
         registered here (e.g. ``"test"``/``"idempotent"``) leak into the global
         registry and break unrelated tests that iterate all registered tools
         (``ModelParams.tool_info`` now raises on a strategy that fails to build).

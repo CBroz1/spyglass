@@ -12,7 +12,7 @@ def test_experimenter_entries_from_multiple_names(common):
     """``generate_entries_from_nwb_object`` maps each name via ``decompose_name``.
 
     A synthetic NWB object (plain input stand-in, not an oracle) drives the
-    real method; the assertion pins the real ``decompose_name`` behaviour —
+    real method. The assertion pins the real ``decompose_name`` behaviour:
     space- and comma-delimited names both normalise to ``"First Last"``.
     """
     exp = common.Session.Experimenter()

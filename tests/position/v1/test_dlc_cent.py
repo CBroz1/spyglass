@@ -50,7 +50,7 @@ def test_insert_params_without_likelihood_thresh(params_tbl):
     """Existing centroid param sets omit likelihood_thresh and must insert.
 
     Centroid params filter on likelihood upstream in DLCSmoothInterp, so no
-    stored set carries the key -- requiring it rejected every pre-existing
+    stored set carries the key, so requiring it rejects every pre-existing
     configuration at insert time.
     """
     params_tbl.insert1(

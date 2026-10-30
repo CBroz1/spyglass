@@ -828,7 +828,7 @@ def mini_insert(
 @pytest.fixture(scope="session")
 def mini_restr(mini_insert, mini_path):
     # Depend on mini_insert so a restriction to the minirec session implies
-    # it has been ingested. Without this, running tests/position/ in isolation
+    # it has been ingested. Unset, running tests/position/ in isolation
     # (no tests/common test triggers mini_insert first) leaves Nwbfile empty.
     yield f"nwb_file_name LIKE '{mini_path.stem}%'"
 

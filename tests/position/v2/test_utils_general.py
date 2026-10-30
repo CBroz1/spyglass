@@ -1,4 +1,4 @@
-"""Tests for spyglass.position.utils.general — pure utility functions."""
+"""Tests for spyglass.position.utils.general: pure utility functions."""
 
 import numpy as np
 import pandas as pd

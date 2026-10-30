@@ -78,9 +78,9 @@ def two_pt_orientation(
         Position data with MultiIndex columns: (bodypart, coord)
         where coord is 'x' or 'y'
     point1 : str, optional
-        Rear/tail marker — the vector originates here.
+        Rear or tail marker. The vector originates here.
     point2 : str, optional
-        Front/head marker — the vector points away from here.
+        Front or head marker. The vector points away from here.
     bodypart1 : str, optional
         V1 alias for ``point1``.
     bodypart2 : str, optional

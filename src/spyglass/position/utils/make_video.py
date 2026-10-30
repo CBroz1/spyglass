@@ -639,7 +639,7 @@ class VideoMaker:
         `plot_frames` swallows per-frame IndexError and TimeoutError, and
         `_generate_single_frame` returns early when its extracted frame is
         absent. Either leaves a gap in the `plot_*.png` sequence, and ffmpeg
-        reads that sequence contiguously -- so it stops at the gap and writes
+        reads that sequence contiguously, so it stops at the gap and writes
         a short partial without failing.
 
         A gap before the end of a batch, or any gap in a batch that is not the
@@ -647,8 +647,8 @@ class VideoMaker:
         overlay from the timestamps. That is unrecoverable, so it raises.
 
         Frames lost only at the tail of the final batch merely shorten the
-        video -- every rendered frame keeps its own timestamp -- so those are
-        logged and tolerated rather than failing the populate.
+        video, since every rendered frame keeps its own timestamp, so those
+        are logged and tolerated rather than failing the populate.
 
         Parameters
         ----------
@@ -830,8 +830,8 @@ class VideoMaker:
         subprocess.CalledProcessError, FileNotFoundError
             If ffmpeg fails or writes no file. Must raise rather than log:
             process_frames deletes this batch's frames immediately after, so
-            a skipped batch cannot be recovered, and concatenating without it
-            would shift every later frame earlier.
+            a skipped batch cannot be recovered and every later frame shifts
+            earlier in time.
         """
         logger.debug(f"Stitch part vid  : {start_frame}")
         frame_pattern = str(self.temp_dir / f"plot_%0{self.pad_len}d.png")
@@ -842,7 +842,7 @@ class VideoMaker:
             "-r",
             str(self.fps),
             "-start_number",
-            "0",  # Start from frame 0 since we use batch indexing
+            "0",  # Frame numbering is batch-relative
             "-i",
             frame_pattern,
             *self.ffmpeg_fmt_args,

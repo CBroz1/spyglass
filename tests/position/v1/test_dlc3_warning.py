@@ -3,7 +3,7 @@
 V1 targets the DLC 2.x TensorFlow engine. Under 3.x's PyTorch default, model
 layout, snapshot naming, and scorer strings all change, so V1 fails in ways
 that read as unrelated bugs (see the ``best-195`` scorer report). The warning
-fires on *use*, not import -- V2 shares ``position/utils/`` and must stay quiet.
+fires on use, not import. V2 shares ``position/utils/`` and must stay quiet.
 """
 
 import pytest
@@ -50,8 +50,8 @@ def test_warns_on_dlc3(dlc_utils, monkeypatch, caplog):
 def test_warns_on_dlc3_prereleases(dlc_utils, monkeypatch, caplog, version):
     """Release candidates count as 3.x.
 
-    ``Version("3.0.0rc14") >= Version("3.0.0")`` is False -- a prerelease sorts
-    below its own release -- so a naive comparison stays silent for exactly the
+    ``Version("3.0.0rc14") >= Version("3.0.0")`` is False, since a prerelease
+    sorts below its own release, so a naive comparison stays silent for the
     builds users run. The reporter who hit the ``best-195`` scorer was on
     3.0.0rc14.
     """
@@ -64,7 +64,7 @@ def test_warns_on_dlc3_prereleases(dlc_utils, monkeypatch, caplog, version):
 
 
 def test_silent_on_dlc2(dlc_utils, monkeypatch, caplog):
-    """2.x is the supported pairing -- no warning."""
+    """2.x is the supported pairing, so no warning."""
     _fake_dlc(monkeypatch, "2.3.11")
 
     with caplog.at_level("WARNING", logger="spyglass"):
@@ -74,7 +74,7 @@ def test_silent_on_dlc2(dlc_utils, monkeypatch, caplog):
 
 
 def test_warns_once(dlc_utils, monkeypatch, caplog):
-    """Repeat calls stay quiet; populate() would otherwise warn per key."""
+    """Repeat calls stay quiet, so populate() warns once, not per key."""
     _fake_dlc(monkeypatch, "3.0.0")
 
     with caplog.at_level("WARNING", logger="spyglass"):
@@ -86,7 +86,7 @@ def test_warns_once(dlc_utils, monkeypatch, caplog):
 
 @pytest.mark.parametrize("version", ["not-a-version", None])
 def test_unparseable_version_is_silent(dlc_utils, monkeypatch, caplog, version):
-    """A version we cannot parse must not raise or cry wolf."""
+    """An unparsable version must not raise or cry wolf."""
     _fake_dlc(monkeypatch, version)
 
     with caplog.at_level("WARNING", logger="spyglass"):
@@ -96,7 +96,7 @@ def test_unparseable_version_is_silent(dlc_utils, monkeypatch, caplog, version):
 
 
 def test_missing_dlc_is_silent(dlc_utils, monkeypatch, caplog):
-    """No DeepLabCut installed -- nothing to warn about."""
+    """No DeepLabCut installed, so nothing to warn about."""
     import builtins
 
     real_import = builtins.__import__
@@ -117,7 +117,7 @@ def test_missing_dlc_is_silent(dlc_utils, monkeypatch, caplog):
 def test_v1_entry_points_call_the_warning():
     """The three V1 DLC populate paths must invoke it.
 
-    A guard nothing calls is worse than none -- it reads as covered.
+    A guard nothing calls reads as covered while testing nothing.
     """
     import inspect
 

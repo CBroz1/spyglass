@@ -2,7 +2,7 @@
 
 ``ffmpeg_clip`` is a dependency-light module-level function that shells out
 to ``ffmpeg`` to make a short, time-bounded clip of a video. It replaces the
-inline DeepLabCut ``VideoWriter.shorten`` call previously used in tutorial 24.
+inline DeepLabCut ``VideoWriter.shorten`` call in tutorial 24.
 """
 
 import shutil

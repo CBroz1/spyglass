@@ -4,10 +4,10 @@
 ``/general/source_script``. Two bugs surfaced during a real GPU populate:
 
 1. It shelled out to a bare ``conda``, letting ``FileNotFoundError``
-   propagate -- an 8-minute inference completed, wrote its NWB, then died
+   propagate: an 8-minute inference completed, wrote its NWB, then died
    at the final insert because a non-login shell had no conda on ``PATH``.
 2. ``conda env export`` with no active environment reports ``name: base``
-   and exits 0, so merely fixing ``PATH`` would have stamped a permanent
+   and exits 0, so fixing ``PATH`` alone stamps a permanent
    provenance record with an environment that did not produce the data.
 """
 
@@ -55,7 +55,7 @@ class TestLoggedEnvInfo:
     def test_reports_running_env_not_base(self, mixin):
         """The provenance property that matters.
 
-        The export is pinned with ``-p sys.prefix``; without it, an
+        The export is pinned with ``-p sys.prefix``. Unpinned, an
         unactivated interpreter silently yields ``name: base``.
         """
         import sys
@@ -70,7 +70,7 @@ class TestLoggedEnvInfo:
         """Format must stay conda YAML, never pip freeze.
 
         Downstream readers parse this field; silently changing its shape
-        would be worse than an explicit failure marker. conda YAML also
+        is less useful than an explicit failure marker. conda YAML also
         carries the non-Python packages (BLAS, ffmpeg, CUDA) this
         pipeline's reproducibility depends on.
         """

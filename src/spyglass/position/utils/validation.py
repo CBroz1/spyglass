@@ -7,8 +7,8 @@ Typed parameter dataclasses
 Each param family exposes a set of frozen dataclasses whose ``method`` field
 is a ``Literal`` discriminator.  Constructing one of these objects gives you
 IDE auto-complete, type-checking, and a structural guarantee that all
-required fields for the chosen method are present — without touching the
-database schema (they are serialised to plain dicts via ``to_dict()``).
+required fields for the chosen method are present. The database schema is
+untouched: they serialise to plain dicts via ``to_dict()``.
 
 Orientation::
 
@@ -641,9 +641,9 @@ def validate_centroid_params(
         )
 
     # Check the mapping's keys in both formats. Keys are roles and values are
-    # bodypart names -- Centroid looks up points["greenLED"] to learn which
-    # bodypart to read -- so the values are free-form and only the keys are a
-    # fixed vocabulary.
+    # bodypart names: Centroid looks up points["greenLED"] to learn which
+    # bodypart to read. The values are free-form; only the keys are a fixed
+    # vocabulary.
     if spec["required_point_keys"] is not None:
         point_identifiers = set(points.keys())
         if point_identifiers != spec["required_point_keys"]:

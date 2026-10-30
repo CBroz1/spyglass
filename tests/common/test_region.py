@@ -23,11 +23,11 @@ def _max_region_id(brain_region):
 def test_region_add(brain_region, region_dict):
     """fetch_add inserts a new region with a fresh autoincrement id.
 
-    The fixture clears test rows before/after, so the test owns its data. We
-    assert the new id is *greater than* the prior max — always true for a
-    fresh autoincrement id — rather than exactly ``max + 1`` (which fails once
+    The fixture clears test rows before and after, so the test owns its data.
+    The assertion is that the new id exceeds the prior max, which holds for any
+    fresh autoincrement id, rather than exactly ``max + 1`` (which fails once
     MySQL's counter has advanced past deleted rows, the reason this test was
-    previously skipped without teardown).
+    skipped without teardown).
     """
     pre_max = _max_region_id(brain_region)
     region_id = brain_region.fetch_add(

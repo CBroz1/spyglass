@@ -223,7 +223,7 @@ class TestMovingAvgWindowFloor:
     """A window that rounds below 2 samples does not smooth, so it raises.
 
     ``max(1, round(duration * rate))`` turned an unusable duration into a
-    1-sample window -- the identity -- and the row populated unsmoothed with
+    1-sample window, the identity, and the row populated unsmoothed with
     no warning. V1 raised on a 0 window.
     """
 

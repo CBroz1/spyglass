@@ -70,7 +70,7 @@ class SpyglassLogger(logging.Logger):
 
 
 # Register via getLogger so the instance is in the hierarchy (caplog works).
-# Save and restore the prior logger class so we don't clobber an
+# Save and restore the prior logger class, which avoids clobbering an
 # application-configured custom Logger class.
 _prev_logger_class = logging.getLoggerClass()
 logging.setLoggerClass(SpyglassLogger)

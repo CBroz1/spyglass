@@ -110,7 +110,7 @@ def test_compute_velocity_no_smoothing():
 
 
 def test_compute_velocity_nan_positions_no_inf():
-    """NaN positions produce NaN velocity — never inf or divide-by-zero.
+    """NaN positions produce NaN velocity, never inf or divide-by-zero.
 
     Regression guard for high-NaN sleep epochs: long NaN gaps in position
     should propagate as NaN into velocity, not produce inf values from

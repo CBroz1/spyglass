@@ -87,7 +87,7 @@ class TestV1VideoKeyword:
     def test_centroids_reaches_bodypart_centroids(self):
         from spyglass.position.utils.make_video import make_video
 
-        # processor="any" fails validation, which happens after binding -- so
+        # processor="any" fails validation, which happens after binding, so
         # ValueError, not TypeError, proves the keyword was accepted.
         with pytest.raises(ValueError, match="processor"):
             make_video(**self.KWARGS, centroids="any", processor="any")

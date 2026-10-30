@@ -29,7 +29,7 @@ def warn_if_dlc3():
 
     V1 targets the DLC 2.x TensorFlow engine. DLC 3.x defaults to PyTorch,
     which changes model-folder layout, snapshot naming, and the scorer string
-    -- so V1 may fail in ways that look unrelated. Position V2 supports 3.x.
+    so V1 may fail in ways that look unrelated. Position V2 supports 3.x.
 
     Called from V1's DLC entry points rather than at import, so V2 users (who
     share ``position/utils/``) never see it, and it fires only on real V1 use.
@@ -45,11 +45,11 @@ def warn_if_dlc3():
         dlc_version = deeplabcut.__version__
         # Compare the major component, not against Version("3.0.0"): a release
         # candidate sorts *below* its own release, so `3.0.0rc14 >= 3.0.0` is
-        # False -- and rc builds are exactly what users have in the wild.
+        # False, and rc builds are what users have in the wild.
         if version.parse(dlc_version).major < 3:
             return
     except (ImportError, AttributeError, TypeError, ValueError):
-        return  # no DLC, or an unparsable version -- nothing to warn about
+        return  # no DLC, or an unparsable version: nothing to warn about
 
     _DLC3_WARNED = True
     logger.warning(
@@ -299,7 +299,7 @@ def get_span_start_stop(indices):
     return span_inds
 
 
-# Video/path helpers moved to utils.general — re-export for backward compat
+# Video/path helpers live in utils.general; re-exported for compatibility
 from spyglass.position.utils.general import _check_packets  # noqa: F401
 from spyglass.position.utils.general import (
     _convert_mp4,

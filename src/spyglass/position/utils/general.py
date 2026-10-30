@@ -357,13 +357,11 @@ def find_mp4(
 def _deterministic_video_stem(filename: str, source_path: str) -> str:
     """Collision-free stem for a converted mp4: ``<clean_stem>__<hash>``.
 
-    Keyed on the *absolute source path*, so the name is a pure function of
-    the source video: unique per source (no two distinct videos share a
-    name) and stable across delete/regenerate cycles — the Position V2
-    "recompute" model, where converted working mp4s can be deleted to
-    reclaim disk and regenerated identically on demand. The clean stem
-    strips a trailing numeric stream suffix (``.1``) via an anchored regex,
-    avoiding the substring bug in the legacy naming.
+    Keyed on the absolute source path, so the name is a pure function of the
+    source video: unique per source, and stable across delete and regenerate
+    cycles. Position V2 relies on that to delete converted working mp4s and
+    regenerate them identically. The clean stem strips a trailing numeric
+    stream suffix (``.1``) with an anchored regex.
 
     Parameters
     ----------
@@ -390,11 +388,11 @@ def ffmpeg_fps_mode_flag() -> str:
     ffmpeg renamed the global ``-vsync`` option to ``-fps_mode`` in version
     5, then removed ``-vsync`` entirely in version 9 (hard error:
     ``Unrecognized option 'vsync'``). Older ffmpeg builds (<5, e.g. Ubuntu
-    22.04's system package) don't recognize ``-fps_mode`` either -- there is
-    no single flag that works everywhere. Probing ``-h full`` for the modern
-    flag name is more robust than parsing ``ffmpeg -version`` output, since
-    version-string format varies across distributions/build variants.
-    Cached: the ffmpeg binary resolved via PATH doesn't change mid-process.
+    22.04's system package) do not recognize ``-fps_mode``, so no single flag
+    covers every version. The probe reads ``-h full`` for the modern flag name
+    rather than parsing ``ffmpeg -version``, whose format varies by
+    distribution and build. Cached, since the ffmpeg binary on PATH is fixed
+    for the process.
 
     Returns
     -------
@@ -437,10 +435,10 @@ def _convert_mp4(
     deterministic: bool
         if True, name the output ``<clean_stem>__<hash>.mp4`` where the hash
         is derived from the source's absolute path (collision-free and
-        reproducible). If False (default, legacy V1 behavior), name it by the
-        bare source stem — see the collision warning below. Position V2 passes
-        True; V1 callers keep False so ``VideoFile.get_abs_path`` can still
-        re-discover the mp4 by its bare name.
+        reproducible). If False (the V1 default), name it by the bare source
+        stem, which collides (see issue #1652). Position V2 passes True. V1
+        callers keep False so ``VideoFile.get_abs_path`` re-discovers the mp4
+        by its bare name.
     """
     if videotype not in ["mp4"]:
         raise NotImplementedError(f"videotype {videotype} not implemented")
@@ -449,17 +447,11 @@ def _convert_mp4(
     video_path = Path(video_path) / filename
 
     # --- Destination naming --------------------------------------------------
-    # BUG (pre-existing, legacy/V1 path — kept for backward compatibility):
-    # the converted mp4 is named ONLY by the source *stem* in a flat shared
-    # directory, and conversion is SKIPPED when a file of that name already
-    # exists (the ``dest_path.exists()`` short-circuit below). Two different
-    # source videos that reduce to the same stem therefore COLLIDE: the second
-    # silently REUSES the first video's mp4, so inference/analysis runs on the
-    # WRONG, pre-existing video with no error raised. The stem reduction is
-    # also lossy — ``".1" in dest_filename`` is a substring test (not a suffix
-    # match), collapsing e.g. ``clip.1.h264``, ``clip.15.h264`` and
-    # ``clip.h264`` all onto ``clip.mp4``. See issue #1652.
-    # V2 avoids this entirely via ``deterministic=True`` (unique per source).
+    # The V1 path names the mp4 by source stem in a flat directory and skips
+    # conversion when that name exists, so two sources reducing to one stem
+    # resolve to the same file. ``".1" in dest_filename`` is a substring test,
+    # which collapses ``clip.1.h264``, ``clip.15.h264`` and ``clip.h264`` onto
+    # ``clip.mp4``. Issue #1652; ``deterministic=True`` is unique per source.
     if deterministic:
         dest_filename = _deterministic_video_stem(filename, video_path)
     else:
@@ -469,11 +461,9 @@ def _convert_mp4(
     dest_path = Path(f"{dest_path}/{dest_filename}.{videotype}")
     if dest_path.exists():
         logger.debug(f"{dest_path} already exists, skipping conversion")
-        # Unsilence the collision bug: under the legacy naming, a *different*
-        # source can reduce to this same name, so the existing mp4 may not be
-        # this source's video. Raise instead of silently returning the wrong
-        # one. (V2's deterministic name already encodes the source, so the
-        # existing file provably corresponds — skip the check there.)
+        # Under V1 naming a different source can reduce to this name, so the
+        # existing mp4 may not be this source's video. V2's deterministic name
+        # encodes the source, so the check is skipped there.
         if not deterministic:
             _assert_video_correspondence(video_path, dest_path, count_frames)
         return dest_path
@@ -554,14 +544,13 @@ def _check_packets(file, count_frames=False):
 def _assert_video_correspondence(source, dest, count_frames=True):
     """Raise if an existing converted mp4 does not match its source video.
 
-    The legacy converter names mp4s by a lossy stem in a flat directory and
-    reuses any file of that name, so a *different* source can silently collide
-    onto an existing mp4 (see issue #1652). This
-    compares the source and existing-destination frame/packet counts and
-    raises rather than returning the wrong video. It does not *fix* the naming
-    — it unsilences the collision so the caller sees an error instead of
-    scientifically wrong data. Note the counts are read by decoding the
-    stream (``ffprobe``), so this runs only on the cache-hit skip path.
+    The V1 converter names mp4s by a lossy stem in a flat directory and
+    reuses any file of that name, so one source can resolve onto another's
+    mp4 (issue #1652). Compares the source and existing-destination frame or
+    packet counts and raises on a mismatch. The naming is unchanged; the
+    caller gets an error rather than the wrong video. Counts are read by
+    decoding the stream with ``ffprobe``, so this runs only on the cache-hit
+    skip path.
 
     Parameters
     ----------
@@ -588,15 +577,15 @@ def _assert_video_correspondence(source, dest, count_frames=True):
         raise RuntimeError(
             f"Cannot verify that existing '{dest}' was produced from source "
             f"'{source}' ({unit} count failed: {e}). Refusing to reuse it "
-            "silently — see issue #1652."
+            "silently. See issue #1652."
         ) from e
     if src_n != dst_n:
         raise ValueError(
             f"Video filename collision: existing '{dest}' has {dst_n} {unit} "
             f"but source '{source}' has {src_n}. The legacy converter names "
             "mp4s by a lossy stem, so a different source reduced to the same "
-            "name and would be silently reused. Rename/relocate one source, "
-            "or use the V2 deterministic converter. See issue #1652."
+            "name. Rename or relocate one source, or use the V2 deterministic "
+            "converter. See issue #1652."
         )
 
 
@@ -648,8 +637,8 @@ def ensure_mp4(video_paths: "list", output_dir: Union[str, PosixPath]):
     .hevc``, matched by suffix without touching disk) and, less commonly,
     containers with unreadable metadata (e.g. h264-in-``.avi``, matched by
     probing the frame count). Either is losslessly remuxed to an mp4 in
-    *output_dir* via :func:`find_mp4` (``ffmpeg -codec copy`` — pixels, and
-    thus pose estimates, unchanged; idempotent — an existing mp4 is reused).
+    *output_dir* via :func:`find_mp4`, which runs ``ffmpeg -codec copy``, so
+    pixels and pose estimates are unchanged and an existing mp4 is reused.
     The **source is never modified or moved**, so a raw h264 stays available
     for e.g. trodes playback. Videos DLC already reads pass through
     unchanged. Shared by project creation (``Model.create_project``) and
@@ -657,7 +646,7 @@ def ensure_mp4(video_paths: "list", output_dir: Union[str, PosixPath]):
 
     Converted mp4s are named deterministically (``deterministic=True``): the
     name is a pure function of the source's absolute path, so it is unique
-    per source (no silent collisions — see issue #1652) and reproducible. V2
+    per source (issue #1652) and reproducible. V2
     working mp4s can therefore be deleted to reclaim disk and regenerated
     identically.
 
@@ -672,8 +661,8 @@ def ensure_mp4(video_paths: "list", output_dir: Union[str, PosixPath]):
     Returns
     -------
     list of str
-        One path per input: the converted mp4 for inputs DLC cannot count, or
-        the original path otherwise.
+        One path per input: the converted mp4 where DLC cannot count frames,
+        and the original path elsewhere.
     """
     result = []
     for path in map(Path, video_paths):

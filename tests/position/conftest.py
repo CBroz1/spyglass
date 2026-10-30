@@ -6,7 +6,7 @@ test environment provides at most one of them; CI installs neither and passes
 tool-dependent tests and live here (rather than in ``v2/conftest.py``) so the
 ``v1``, ``v2``, and ``utils`` suites all share one definition.
 
-pytables (``tables``) is a hard test dependency -- it is declared in the
+pytables (``tables``) is a hard test dependency, declared in the
 ``test`` extra and is therefore always installed when the suite runs, including
 CI ``--no-pose`` runs. HDF5 read/write is consequently assumed available and is
 never a skip condition; only genuine DLC/SLEAP requirements gate a test.

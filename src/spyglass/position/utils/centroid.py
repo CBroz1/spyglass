@@ -411,7 +411,7 @@ def get_4pt_centroid(
     only_center = nans[green] & ~nans[red_C]
     centroid[only_center] = coords[red_C][only_center]
 
-    # Priority 6: Single-LED fallbacks — match V1 Centroid class behaviour
+    # Priority 6: single-LED fallbacks, matching V1's Centroid class
     only_green = ~nans[green] & nans[red_C] & nans[red_L] & nans[red_R]
     centroid[only_green] = coords[green][only_green]
 

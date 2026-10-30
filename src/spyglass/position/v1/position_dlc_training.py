@@ -136,8 +136,8 @@ def latest_snapshot_index(train_dir: Path) -> int:
     DLC judges "latest" by snapshot magnitude; this means most recently
     written. Only the TensorFlow engine writes the ``*index*`` files searched
     here. The PyTorch engine, the DLC 3 default, writes ``snapshot-*.pt``,
-    so a PyTorch project finds nothing and raises rather than reporting 0,
-    which would be indistinguishable from a real snapshot index.
+    so a PyTorch project finds nothing and raises. A return of 0 is a valid
+    snapshot index, so it cannot signal the empty case.
     """
     latest, max_modified_time = None, 0
     for snapshot in train_dir.glob("*index*"):

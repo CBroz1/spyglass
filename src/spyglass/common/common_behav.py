@@ -76,9 +76,9 @@ class PositionSource(SpyglassIngestion, dj.Manual):
 
         Each epoch yields an IntervalList entry (the parent, first), a source
         entry, and one SpatialSeries part entry per series in that epoch.
-        RawPosition and its PosObject part are filled from the same series --
-        they hold the object ids this pass already read -- rather than making
-        RawPosition parse the file a second time.
+        RawPosition and its PosObject part are filled from the same series,
+        which hold the object ids this pass already read, so RawPosition does
+        not parse the file a second time.
         """
         sess_key = dict(base_key or dict())
         nwb_file_name = sess_key["nwb_file_name"]
@@ -573,9 +573,8 @@ class VideoFile(SpyglassIngestion, dj.Imported):
         # every series was placed.
         self._placed_videos += bool(entries)
 
-        # Every epoch a video does *not* belong to fails the overlap check, so
-        # a placed video would otherwise report a mismatch for each of its
-        # non-owning epochs. Only a video that landed nowhere has failed.
+        # A video fails the overlap check against every epoch it does not
+        # belong to, so only a video that landed nowhere has failed.
         if not entries:
             self._failed_videos["timestamp_mismatch"].extend(mismatches)
 
@@ -897,10 +896,14 @@ class VideoFile(SpyglassIngestion, dj.Imported):
         Returns
         -------
         dict with keys:
-            ``needs_camera``, ``needs_path`` : bool — what was missing.
-            ``camera_updated``, ``path_updated`` : bool — what was filled.
-            ``nwb_error`` : str | None — NWB fetch failure message.
-            ``path_error`` : str | None — path lookup failure message.
+            ``needs_camera``, ``needs_path`` : bool
+                What was missing.
+            ``camera_updated``, ``path_updated`` : bool
+                What was filled.
+            ``nwb_error`` : str or None
+                NWB fetch failure message.
+            ``path_error`` : str or None
+                Path lookup failure message.
         """
         needs_camera = not row.get("camera_name")
         needs_path = not row.get("path")
@@ -933,7 +936,7 @@ class VideoFile(SpyglassIngestion, dj.Imported):
             status["camera_updated"] = True
 
         if needs_path:
-            # Source 1: external_file in the NWB ImageSeries — most direct.
+            # Source 1: external_file in the NWB ImageSeries.
             path_found = None
             ext_files = getattr(video_file, "external_file", None)
             if not isinstance(ext_files, (list, tuple)):
@@ -1099,10 +1102,10 @@ class VideoFile(SpyglassIngestion, dj.Imported):
 
         1. A lone candidate row is accepted directly, backfilling its ``path``
            if currently null.
-        2. Otherwise the stored ``VideoFile.path`` is matched by *stem*, so a
-           raw ``file.1.h264`` (V1 ingest) resolves the DLC-converted
-           ``file.mp4`` — stems agree, suffixes differ.  Requires ``path`` to
-           be populated; call ``VideoFile.update_entries()`` first if null.
+        2. Several candidates are matched by stem, so a raw ``file.1.h264``
+           from V1 ingest resolves the DLC-converted ``file.mp4``: the stems
+           agree and the suffixes differ. Requires ``path`` to be populated;
+           call ``VideoFile.update_entries()`` first when it is null.
 
         Parameters
         ----------
@@ -1125,18 +1128,18 @@ class VideoFile(SpyglassIngestion, dj.Imported):
         if not candidates:
             return None, []
 
-        # One candidate under the restriction — unambiguous. Record the DLC
-        # path against it when VideoFile.path is currently null. (update1 needs
-        # the full PK and must run on the base table, not a restriction.)
+        # One candidate under the restriction. Record the DLC path against it
+        # when VideoFile.path is null. update1 needs the full PK and must run
+        # on the base table, not a restriction.
         if len(candidates) == 1:
             row = candidates[0]
             if not row.get("path") and video_path:
                 self.update1({**self.dict_to_pk(row), "path": video_path})
             return self.dict_to_pk(row), []
 
-        # Several candidates (multi-camera epoch) — match the stored path by
-        # stem.  ``name.startswith(stem + ".")`` covers an exact basename match
-        # too, so the raw-vs-converted suffix (h264/mp4) is handled uniformly.
+        # Several candidates (multi-camera epoch): match the stored path by
+        # stem. ``name.startswith(stem + ".")`` also covers an exact basename
+        # match, so h264 and mp4 suffixes are handled uniformly.
         stem = Path(video_path).stem
         matched = [
             row
@@ -1177,7 +1180,7 @@ class VideoFile(SpyglassIngestion, dj.Imported):
         query = self & {"path": video_path.as_posix()}
 
         if not query and update_on_miss:
-            # Caller opted in — refresh null-path entries then retry once
+            # Caller opted in: refresh null-path entries, then retry once
             self.update_entries()
             query = self & {"path": video_path.as_posix()}
 

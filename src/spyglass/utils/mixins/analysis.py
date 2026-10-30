@@ -309,8 +309,8 @@ class AnalysisMixin(BaseMixin):
         """Find a conda-compatible executable for ``env export``.
 
         Searches the running interpreter's own installation before
-        ``PATH``. A non-login shell -- cron, systemd, ``sudo``, a bare
-        ``<env>/bin/python`` invocation -- never sources the profile that
+        ``PATH``. A non-login shell (cron, systemd, ``sudo``, a bare
+        ``<env>/bin/python`` invocation) never sources the profile that
         puts conda on ``PATH``, so ``PATH`` alone is not a dependable
         way to find it.
 
@@ -341,7 +341,7 @@ class AnalysisMixin(BaseMixin):
     def _logged_env_info(self) -> str:
         """Get the environment information for logging.
 
-        Always conda YAML, or an explanatory marker -- never a different
+        Always conda YAML, or an explanatory marker, never a different
         format. Falling back to ``pip freeze`` would silently change the
         shape of a permanent provenance record, and would drop the
         non-Python packages (BLAS, ffmpeg, CUDA runtime) that this

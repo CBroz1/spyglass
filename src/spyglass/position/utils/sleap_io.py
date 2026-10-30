@@ -51,17 +51,23 @@ def parse_sleap_analysis_h5(
     SLEAP .analysis.h5 dataset layout (the "matlab" preset written by
     ``Labels.export_analysis`` / ``sleap_io.save_analysis_h5``, which is
     SLEAP's default and the format documented in SLEAP's own export
-    tutorial — column-major order for MATLAB compatibility):
+    tutorial, in column-major order for MATLAB compatibility):
 
-    - ``node_names``    — shape (n_nodes,), bodypart name strings
-    - ``track_names``   — shape (n_tracks,), track/animal name strings
-    - ``tracks``        — shape (n_tracks, 2, n_nodes, n_frames); NaN = missing
-    - ``track_occupancy`` — shape (n_frames, n_tracks), bool (frame-first;
-                            this is a documented quirk — every other array
-                            here is track-first)
-    - ``instance_scores`` — shape (n_tracks, n_frames), overall confidence
-    - ``point_scores``  — shape (n_tracks, n_nodes, n_frames), per-node
-                          confidence; may be absent in older exports
+    ===================  ======================================  ============
+    dataset              shape                                   notes
+    ===================  ======================================  ============
+    ``node_names``       (n_nodes,)                              bodypart names
+    ``track_names``      (n_tracks,)                             track names
+    ``tracks``           (n_tracks, 2, n_nodes, n_frames)        NaN = missing
+    ``track_occupancy``  (n_frames, n_tracks)                    bool,
+                                                                 frame-first
+    ``instance_scores``  (n_tracks, n_frames)                    confidence
+    ``point_scores``     (n_tracks, n_nodes, n_frames)           per-node,
+                                                                 may be absent
+    ===================  ======================================  ============
+
+    ``track_occupancy`` is frame-first; every other array here is
+    track-first.
 
     When ``point_scores`` is absent, ``likelihood`` is filled from
     ``instance_scores`` broadcast per node (conservative fallback).

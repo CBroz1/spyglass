@@ -18,9 +18,9 @@ BASE_URL = "https://ucsf.box.com/shared/static/"
 #       5. add to FILE_PATHS below as `"url": BASE_URL + "{file_id}"`
 
 # Per-entry flags (both default False when absent):
-#   "pose_only"  -- skip the download when pose fixtures are disabled
+#   "pose_only"  : skip the download when pose fixtures are disabled
 #                   (``download_dlc=False``, i.e. pytest ``--no-pose``).
-#   "dlc_move"   -- copy into the DLC project dir via ``move_dlc_items``.
+#   "dlc_move"   : copy into the DLC project dir via ``move_dlc_items``.
 # Entries with neither flag are core fixtures: always downloaded, never moved.
 FILE_PATHS = [
     # ── Core fixtures (always downloaded, never moved) ─────────────────

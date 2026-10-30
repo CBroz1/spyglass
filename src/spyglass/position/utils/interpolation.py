@@ -658,7 +658,7 @@ def mask_short_valid_islands(
     """Mark short valid islands surrounded by NaN as missing.
 
     A *valid island* is a consecutive run of non-NaN frames flanked by NaN on
-    both sides.  Very short islands make poor interpolation anchors — linear
+    both sides. Very short islands make poor interpolation anchors: linear
     interpolation across a long bad stretch that happens to contain a 1–2 frame
     valid island can produce unrealistic trajectories.  Masking them first lets
     ``interp_position`` treat the whole region as a single uninterpolatable gap.

@@ -2,10 +2,10 @@
 
 Two consumers, one source of truth:
 
-- ``Model.load`` / ``Model.load_from_dlc_zoo`` — resolve a string against the
+- ``Model.load`` and ``Model.load_from_dlc_zoo`` resolve a string against the
   catalog to decide whether it names a zoo model, then fetch its weights.
-- ``maintenance_scripts`` / tests — pre-fetch weights so a test run never
-  downloads implicitly.
+- ``maintenance_scripts`` and the tests pre-fetch weights, which keeps a test
+  run from downloading implicitly.
 
 Lives under ``position/v2/utils/`` rather than the tool-agnostic
 ``position/utils/`` because the zoo is DLC-3-only: the catalog API
@@ -20,7 +20,7 @@ is wrong for half the catalog. :func:`default_backbone` reads the catalog.
 
 **Weights are large and cached per environment.** One model is ~646 MB
 (152 MB pose + 494 MB detector for topviewmouse/hrnet_w32), and DLC caches them
-*inside the installed deeplabcut package* — so the cache is per conda env and
+inside the installed deeplabcut package, so the cache is per conda env and
 must be re-fetched after an env rebuild. :func:`snapshot_path` defaults to
 ``download=False`` so callers can check before committing to a download.
 
@@ -114,8 +114,8 @@ def project_config(dataset: str) -> dict:
     """Parsed project config DLC ships for *dataset*.
 
     Supplies the bodyparts and skeleton edges for the imported ``Skeleton``.
-    Note ``video_sets`` is empty in these files -- DLC does not distribute the
-    training media -- which is why a zoo import records provenance rather than
+    ``video_sets`` is empty in these files, since DLC does not distribute the
+    training media. A zoo import therefore records provenance rather than
     ``VideoFile`` rows.
     """
     from deeplabcut.pose_estimation_pytorch.modelzoo.utils import (
@@ -164,7 +164,7 @@ def resolve_detector(
     if detector_name not in detectors:
         raise ValueError(
             f"{dataset!r} has no detector {detector_name!r}; "
-            f"it offers {detectors or '(none -- bottom-up model)'}"
+            f"it offers {detectors or '(none; bottom-up model)'}"
         )
     return detector_name
 
@@ -172,12 +172,12 @@ def resolve_detector(
 def backbone_framework(model_name: str) -> str:
     """Engine backing a zoo backbone: ``'pytorch'`` or ``'tensorflow'``.
 
-    DLC routes by backbone -- ``dlcrnet`` is TensorFlow, the rest PyTorch --
-    and DLC-TF continuation is a documented won't-do in this project, so a
-    TF-backed zoo model can only ever be used for inference.
+    DLC routes by backbone: ``dlcrnet`` is TensorFlow and the rest PyTorch.
+    This project does not continue DLC-TF training, so a TF-backed zoo model
+    is inference-only.
 
     Falls back to ``'pytorch'`` for anything unlisted, matching DLC's own
-    default, rather than guessing the restrictive answer.
+    default.
     """
     try:
         import json
@@ -210,8 +210,8 @@ def snapshot_path(
     model_name : str, optional
         Backbone; defaults to whatever the dataset offers first.
     download : bool, optional
-        Fetch when absent. Default False -- the path is deterministic, so
-        callers can test ``.exists()`` without committing to ~646 MB.
+        Fetch when absent. Default False. The path is deterministic, so a
+        caller can test ``.exists()`` before committing to ~646 MB.
 
     Returns
     -------
@@ -257,7 +257,7 @@ def fetch(dataset: str, model_name: Optional[str] = None) -> Path:
 
 
 # --------------------------------------------------------------------------
-# CLI -- pre-fetch so a test run never downloads implicitly
+# CLI: pre-fetch, so a test run never downloads implicitly
 # --------------------------------------------------------------------------
 
 
@@ -278,7 +278,8 @@ def main(argv=None) -> int:
     catalog = zoo_catalog()
     if not catalog:
         print(
-            "DeepLabCut 3.x not installed -- use the `pv2` env", file=sys.stderr
+            "DeepLabCut 3.x not installed. Use the `pv2` env",
+            file=sys.stderr,
         )
         return 1
 

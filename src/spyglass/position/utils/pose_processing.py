@@ -132,7 +132,7 @@ def _mask_large_jumps(
             if dx * dx + dy * dy > max_sq:
                 x[i] = np.nan
                 y[i] = np.nan
-                continue  # keep prev_x/y unchanged — compare next frame to same anchor
+                continue  # keep prev_x/y: next frame compares to the same anchor
         prev_x, prev_y = x[i], y[i]
     return x, y
 
@@ -262,11 +262,11 @@ def compute_pose_outputs(
         (scorer, bodypart, coord) or (bodypart, coord).  Index must be
         timestamps in seconds.
     orient_params : dict
-        Orientation parameters — ``method`` key required.
+        Orientation parameters. ``method`` key required.
     centroid_params : dict
-        Centroid parameters — ``method`` and ``points`` keys required.
+        Centroid parameters. ``method`` and ``points`` keys required.
     smooth_params : dict
-        Smoothing parameters — ``likelihood_thresh``, ``interpolate``,
+        Smoothing parameters: ``likelihood_thresh``, ``interpolate``,
         ``smooth`` keys supported.
 
     Returns
@@ -437,7 +437,7 @@ def compute_pose_outputs(
 def calculate_velocity(
     position: np.ndarray,
     timestamps: np.ndarray,
-    sampling_rate: float,  # noqa: ARG001 — kept for API consistency
+    sampling_rate: float,  # noqa: ARG001; kept for API consistency
 ) -> np.ndarray:
     """Calculate scalar speed (cm/s) from (x, y) position.
 

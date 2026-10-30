@@ -117,7 +117,7 @@ def test_all_nans(populate_pose_estimation, sgp):
     The threshold must exceed every likelihood for the guard to be reached,
     and `get_subthresh_inds` compares with a strict `<`, so a threshold of
     1.0 still leaves the points at exactly 1.0 above it. Hence 1.1 rather
-    than a value near the top of the range -- the premise is asserted below
+    than a value near the top of the range. The premise is asserted below
     so this cannot quietly stop testing the guard if the fixture changes.
     """
     pose_est_tbl = populate_pose_estimation
