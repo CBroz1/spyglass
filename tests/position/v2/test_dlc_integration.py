@@ -1,7 +1,7 @@
 """Integration tests for DLC-specific V2 functionality.
 
 Covers:
-- Path resolution utilities (resolve_model_path, _to_stored_path)
+- Path resolution utilities (resolve_model_path, to_stored_path)
 - DLCStrategy.get_latest_model_info() using the synthetic test project
 - Model.get_training_history() using the synthetic test project
 - Model.load() via DLC config.yaml with bootstrapped session
@@ -31,7 +31,7 @@ class TestResolveModelPath:
 
     def test_absolute_path_returned_unchanged(self):
         """An absolute stored path is returned as-is."""
-        from spyglass.position.v2.train import resolve_model_path
+        from spyglass.position.utils.path_helpers import resolve_model_path
 
         p = "/some/absolute/path/config.yaml"
         assert resolve_model_path(p) == Path(p)
@@ -41,7 +41,7 @@ class TestResolveModelPath:
         import spyglass.position.utils.path_helpers as ph_mod
 
         monkeypatch.setattr(ph_mod, "pose_project_dir", None)
-        from spyglass.position.v2.train import resolve_model_path
+        from spyglass.position.utils.path_helpers import resolve_model_path
 
         result = resolve_model_path("relative/config.yaml")
         assert result == Path.cwd() / "relative/config.yaml"
@@ -51,7 +51,7 @@ class TestResolveModelPath:
         import spyglass.position.utils.path_helpers as ph_mod
 
         monkeypatch.setattr(ph_mod, "pose_project_dir", tmp_path)
-        from spyglass.position.v2.train import resolve_model_path
+        from spyglass.position.utils.path_helpers import resolve_model_path
 
         result = resolve_model_path("project/config.yaml")
         assert result == tmp_path / "project/config.yaml"
@@ -61,57 +61,57 @@ class TestResolveModelPath:
         import spyglass.position.utils.path_helpers as ph_mod
 
         monkeypatch.setattr(ph_mod, "pose_project_dir", tmp_path)
-        from spyglass.position.v2.train import resolve_model_path
+        from spyglass.position.utils.path_helpers import resolve_model_path
 
         p = "/fixed/absolute.yaml"
         assert resolve_model_path(p) == Path(p)
 
 
 class TestToStoredPath:
-    """Tests for _to_stored_path() in train.py."""
+    """Tests for to_stored_path() in train.py."""
 
     def test_under_base_stored_as_relative(self, monkeypatch, tmp_path):
         """Path under pose_project_dir is stored as a relative string."""
         import spyglass.position.utils.path_helpers as ph_mod
 
         monkeypatch.setattr(ph_mod, "pose_project_dir", tmp_path)
-        from spyglass.position.v2.train import _to_stored_path
+        from spyglass.position.utils.path_helpers import to_stored_path
 
         full = tmp_path / "project" / "config.yaml"
-        assert _to_stored_path(full) == "project/config.yaml"
+        assert to_stored_path(full) == "project/config.yaml"
 
     def test_outside_base_stored_as_absolute(self, monkeypatch, tmp_path):
         """Path outside pose_project_dir is stored as an absolute string."""
         import spyglass.position.utils.path_helpers as ph_mod
 
         monkeypatch.setattr(ph_mod, "pose_project_dir", tmp_path)
-        from spyglass.position.v2.train import _to_stored_path
+        from spyglass.position.utils.path_helpers import to_stored_path
 
         outside = Path("/other/location/config.yaml")
-        assert _to_stored_path(outside) == str(outside)
+        assert to_stored_path(outside) == str(outside)
 
     def test_no_base_always_absolute(self, monkeypatch):
         """With pose_project_dir=None, paths are always stored as absolute."""
         import spyglass.position.utils.path_helpers as ph_mod
 
         monkeypatch.setattr(ph_mod, "pose_project_dir", None)
-        from spyglass.position.v2.train import _to_stored_path
+        from spyglass.position.utils.path_helpers import to_stored_path
 
         p = Path("/some/path/config.yaml")
-        assert _to_stored_path(p) == str(p)
+        assert to_stored_path(p) == str(p)
 
     def test_roundtrip_under_base(self, monkeypatch, tmp_path):
-        """_to_stored_path → resolve_model_path recovers the original path."""
+        """to_stored_path -> resolve_model_path recovers the original path."""
         import spyglass.position.utils.path_helpers as ph_mod
 
         monkeypatch.setattr(ph_mod, "pose_project_dir", tmp_path)
-        from spyglass.position.v2.train import (
-            _to_stored_path,
+        from spyglass.position.utils.path_helpers import (
             resolve_model_path,
+            to_stored_path,
         )
 
         original = tmp_path / "project" / "config.yaml"
-        stored = _to_stored_path(original)
+        stored = to_stored_path(original)
         assert resolve_model_path(stored) == original
 
 

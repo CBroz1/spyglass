@@ -31,7 +31,7 @@ class TestHelperFunctions:
         """Test default_pk_name generation."""
         import re
 
-        from spyglass.position.v2.train import default_pk_name
+        from spyglass.position.utils.protocols import default_pk_name
 
         # Format is PREFIX-YYYYMMDD-HASH8: 5 + 8 + 1 + 8 = 22 chars
         name = default_pk_name("test", {"param": "value"})
@@ -61,7 +61,7 @@ class TestHelperFunctions:
         """
         import re
 
-        from spyglass.position.v2.train import default_pk_name
+        from spyglass.position.utils.protocols import default_pk_name
 
         model_id = default_pk_name("mdl")
         assert re.fullmatch(r"mdl-\d{8}-[0-9a-f]{8}", model_id), model_id
@@ -69,7 +69,7 @@ class TestHelperFunctions:
 
     def test_resolve_model_path(self):
         """Test resolve_model_path function."""
-        from spyglass.position.v2.train import resolve_model_path
+        from spyglass.position.utils.path_helpers import resolve_model_path
         from spyglass.settings import pose_project_dir
 
         # Test absolute path
@@ -89,12 +89,12 @@ class TestHelperFunctions:
         assert resolved == expected
 
     def test_to_stored_path(self):
-        """Test _to_stored_path function."""
-        from spyglass.position.v2.train import _to_stored_path
+        """Test to_stored_path function."""
+        from spyglass.position.utils.path_helpers import to_stored_path
 
         # Test absolute path (no pose_project_dir)
         abs_path = Path("/absolute/path/to/model.pkl")
-        stored = _to_stored_path(abs_path)
+        stored = to_stored_path(abs_path)
         assert stored == str(abs_path)
 
     def test_prompt_default(self):
@@ -702,7 +702,7 @@ class TestModelMetadataRegistration:
     @staticmethod
     def _metadata(**overrides):
         """A `ModelMetadata` with every field populated."""
-        from spyglass.position.v2.train import ModelMetadata
+        from spyglass.position.utils.protocols import ModelMetadata
 
         defaults = dict(
             model_id="test_metadata",
