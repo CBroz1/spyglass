@@ -42,7 +42,7 @@ def build_projection_matrix(intrinsics: dict, extrinsics: dict) -> np.ndarray:
     Notes
     -----
     Extrinsics are stored camera-to-rig (world).  The projection matrix
-    requires rig-to-camera, so we invert: R_wc = R.T, t_wc = -R.T @ t.
+    requires rig-to-camera, so it is inverted: R_wc = R.T, t_wc = -R.T @ t.
     """
     K = np.array(
         [
@@ -115,15 +115,15 @@ def triangulate_points_dlt(
     Parameters
     ----------
     pts_list : list of np.ndarray
-        Each element has shape (n_frames, 2) — pixel (x, y) for one camera.
+        Each element has shape (n_frames, 2): pixel (x, y) for one camera.
         NaN indicates missing detection for that frame.
     proj_matrices : list of np.ndarray
-        Each element has shape (3, 4) — projection matrix for the same camera.
+        Each element has shape (3, 4): projection matrix for the same camera.
 
     Returns
     -------
     np.ndarray
-        Shape (n_frames, 3) — triangulated (X, Y, Z) in rig coordinates
+        Shape (n_frames, 3): triangulated (X, Y, Z) in rig coordinates
         (units match the extrinsics translation, typically metres).
         Frames with insufficient valid cameras are NaN.
     """
@@ -316,7 +316,7 @@ def reproject_pose_to_camera(
     ----------
     pose_3d : pd.DataFrame
         Triangulated 3D pose with 3-level columns ``(scorer, bodypart, coord)``
-        where ``coord ∈ {x, y, z, likelihood}`` — the output of
+        where ``coord ∈ {x, y, z, likelihood}``, the output of
         :func:`triangulate_pose_df` (or ``PoseEstim.fetch1_dataframe``).
     calibration : dict
         Single-camera calibration ``{"intrinsics": ..., "extrinsics": ...}``,

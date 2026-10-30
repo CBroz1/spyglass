@@ -13,7 +13,7 @@ mode (``task_mode='load'``) over per-camera DLC ``.h5`` outputs already on disk:
 
 The caller supplies the *real* per-camera inputs (DLC h5 outputs, videos, and
 calibration); everything else is synthetic scaffolding.  The 2D inputs and
-calibration are produced by a dataset-specific preparer — e.g.
+calibration are produced by a dataset-specific preparer, e.g.
 ``maintenance_scripts/load_anipose_3d_project.py`` for the Anipose mouse data.
 
 The per-camera DLC ``.h5`` files must be named ``{video_stem}DLC_*.h5`` and
@@ -118,7 +118,7 @@ def bootstrap_3d_project(
             f"of videos ({n_cams})."
         )
     # Every loaded video must pair with a calibrated camera at the same slot,
-    # and every calibrated camera must have a video — otherwise the 3D path
+    # and every calibrated camera must have a video, or the 3D path
     # would triangulate a camera against the wrong (or a missing) calibration.
     if set(camera_indices) != set(calib_by_cam):
         raise ValueError(

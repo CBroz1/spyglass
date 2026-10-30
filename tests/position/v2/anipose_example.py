@@ -19,7 +19,7 @@ running ``PoseEstim``, plotting).
 .. note::
    This lives under ``tests/`` alongside the other tutorial bootstrap helpers
    (``make_example_dlc_project.py``, ``make_example_3d_project.py``) even
-   though it fetches example rather than test data — a deliberate tradeoff to
+   though it fetches example rather than test data, a deliberate tradeoff to
    keep every notebook-support helper co-located and importable the same way.
 """
 
@@ -111,7 +111,7 @@ def _download_and_extract(dest_dir):
         if mouse_zip.stat().st_size == 0:
             mouse_zip.unlink(missing_ok=True)
             raise RuntimeError(
-                "Downloaded zip is empty — the download was incomplete. "
+                "Downloaded zip is empty: the download was incomplete. "
                 "Re-run to retry."
             )
 
@@ -129,7 +129,7 @@ def _download_and_extract(dest_dir):
                 for member in missing:
                     zf.extract(member, extract_root)
         except zipfile.BadZipFile as err:
-            mouse_zip.unlink(missing_ok=True)  # corrupt — force re-download
+            mouse_zip.unlink(missing_ok=True)  # corrupt: force re-download
             raise RuntimeError(
                 "The downloaded zip is corrupt (likely a partial download). "
                 "It has been removed; re-run to download again."
@@ -141,7 +141,7 @@ def _download_and_extract(dest_dir):
                 raise RuntimeError(f"Extracted file is missing or empty: {out}")
         print("Done.")
     else:
-        print("Example data already present — skipping download.")
+        print("Example data already present; skipping download.")
 
     return extract_root / ZIP_SESS
 
@@ -151,7 +151,7 @@ def _write_clean_dlc_h5(pose2d_h5, out_h5):
 
     Anipose stores multiple candidate detections per body part; this keeps the
     top ``x`` / ``y`` / ``likelihood`` per part and writes a 3-level
-    ``(scorer, bodyparts, coords)`` frame — the layout the V2 DLC output-
+    ``(scorer, bodyparts, coords)`` frame, the layout the V2 DLC output-
     discovery strategy expects for ``task_mode='load'``.
 
     Parameters

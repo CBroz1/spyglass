@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 # ---------------------------------------------------------------------------
-# MC01 — camera_index in VidFileGroup.File
+# camera_index in VidFileGroup.File
 # ---------------------------------------------------------------------------
 
 
@@ -85,7 +85,7 @@ class TestMulticamSingleSession:
 
     Blast-radius guard on the single-session inference constraint: the guard
     must key off *distinct NWB files*, not off the number of ``File`` rows,
-    or every 3-D group would be rejected.
+    or it rejects every 3-D group.
     """
 
     def test_get_nwb_file_dedups_cameras(
@@ -115,7 +115,7 @@ class TestMulticamSingleSession:
 
 
 # ---------------------------------------------------------------------------
-# MC02 — per-camera meters_per_pixel from CameraDevice (source of truth)
+# Per-camera meters_per_pixel from CameraDevice (source of truth)
 # ---------------------------------------------------------------------------
 
 
@@ -182,7 +182,7 @@ class TestFetchMetersPerPixel:
 
 
 # ---------------------------------------------------------------------------
-# MC02b — CameraDevice FK chain in CameraRig.Camera
+# CameraDevice FK chain in CameraRig.Camera
 # ---------------------------------------------------------------------------
 
 
@@ -295,7 +295,7 @@ class TestCameraRigCamera:
 
 
 # ---------------------------------------------------------------------------
-# MC03 — 3D mode detection
+# 3D mode detection
 # ---------------------------------------------------------------------------
 
 
@@ -325,7 +325,7 @@ class TestIs3dMode:
 
 
 # ---------------------------------------------------------------------------
-# MC03 — triangulation pure-function tests (no DB needed)
+# Triangulation pure-function tests (no DB needed)
 # ---------------------------------------------------------------------------
 
 

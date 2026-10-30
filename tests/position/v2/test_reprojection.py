@@ -1,6 +1,6 @@
 """Unit tests for ``reproject_pose_to_camera`` (2D→3D→2D loop closure).
 
-These tests are pure functions — no database or DLC install required.
+These tests are pure functions, with no database or DLC install required.
 """
 
 import numpy as np
