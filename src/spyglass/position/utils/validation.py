@@ -79,6 +79,13 @@ class BisectorOrientParams:
     smoothing_params: Optional[Dict] = None
 
     def to_dict(self) -> dict:
+        """Return the parameters as a plain dict.
+
+        Returns
+        -------
+        dict
+            One key per field, in declaration order.
+        """
         return dataclasses.asdict(self)
 
 
@@ -89,6 +96,13 @@ class NoOrientParams:
     method: Literal["none"] = "none"
 
     def to_dict(self) -> dict:
+        """Return the parameters as a plain dict.
+
+        Returns
+        -------
+        dict
+            One key per field, in declaration order.
+        """
         return dataclasses.asdict(self)
 
 
@@ -106,6 +120,13 @@ class OnePtCentroidParams:
     method: Literal["1pt"] = "1pt"
 
     def to_dict(self) -> dict:
+        """Return the parameters as a plain dict.
+
+        Returns
+        -------
+        dict
+            One key per field, in declaration order.
+        """
         return dataclasses.asdict(self)
 
 
@@ -118,6 +139,13 @@ class TwoPtCentroidParams:
     method: Literal["2pt"] = "2pt"
 
     def to_dict(self) -> dict:
+        """Return the parameters as a plain dict.
+
+        Returns
+        -------
+        dict
+            One key per field, in declaration order.
+        """
         return dataclasses.asdict(self)
 
 
@@ -130,6 +158,13 @@ class FourPtCentroidParams:
     method: Literal["4pt"] = "4pt"
 
     def to_dict(self) -> dict:
+        """Return the parameters as a plain dict.
+
+        Returns
+        -------
+        dict
+            One key per field, in declaration order.
+        """
         return dataclasses.asdict(self)
 
 
@@ -149,6 +184,13 @@ class MovingAvgParams:
     method: Literal["moving_avg"] = "moving_avg"
 
     def to_dict(self) -> dict:
+        """Return the parameters as a plain dict.
+
+        Returns
+        -------
+        dict
+            One key per field, in declaration order.
+        """
         return dataclasses.asdict(self)
 
 
@@ -161,6 +203,13 @@ class SavGolParams:
     method: Literal["savgol"] = "savgol"
 
     def to_dict(self) -> dict:
+        """Return the parameters as a plain dict.
+
+        Returns
+        -------
+        dict
+            One key per field, in declaration order.
+        """
         return dataclasses.asdict(self)
 
 
@@ -172,6 +221,13 @@ class GaussianParams:
     method: Literal["gaussian"] = "gaussian"
 
     def to_dict(self) -> dict:
+        """Return the parameters as a plain dict.
+
+        Returns
+        -------
+        dict
+            One key per field, in declaration order.
+        """
         return dataclasses.asdict(self)
 
 
@@ -193,9 +249,17 @@ class SmoothingParams:
     smoothing_params: Optional[Union[SmoothingMethodParams, Dict]] = None
 
     def to_dict(self) -> dict:
-        d = dataclasses.asdict(self)
-        # If smoothing_params was a dataclass, asdict already recursed into it.
-        return d
+        """Return the parameters as a plain dict.
+
+        A typed ``smoothing_params`` sub-dataclass becomes a nested dict;
+        a dict passed in stays as given.
+
+        Returns
+        -------
+        dict
+            One key per field, in declaration order.
+        """
+        return dataclasses.asdict(self)
 
 
 def _to_dict_if_dataclass(obj):

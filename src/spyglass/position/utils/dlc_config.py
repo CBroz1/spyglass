@@ -25,6 +25,15 @@ class DlcConfig:
     """
 
     def __init__(self, project_dir, config: dict):
+        """Pair an already-parsed config with the directory it came from.
+
+        Parameters
+        ----------
+        project_dir : str or pathlib.Path
+            Directory containing the project ``config.yaml``.
+        config : dict
+            The parsed config contents. Use ``read`` to load one from disk.
+        """
         self.project_dir = Path(project_dir)
         self.config = config
 

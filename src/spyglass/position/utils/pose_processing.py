@@ -335,6 +335,11 @@ def compute_pose_outputs(
     )
 
     def _resolve(name):
+        """Map a param-supplied body-part name to its dataframe column.
+
+        Falls back to ``name`` when no column matches, so an unresolved
+        spelling surfaces as a KeyError at the indexing site.
+        """
         return canonicalize(name, col_map, default=name)
 
     # --- orientation ----------------------------------------------------------

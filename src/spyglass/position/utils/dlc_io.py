@@ -32,10 +32,10 @@ def squeeze_individuals(
     """Reduce DLC multi-animal output to the single-animal column layout.
 
     Spyglass position is single-animal: ``compute_pose_outputs`` derives one
-    centroid and one orientation per frame. DLC's multi-animal output — which
-    every SuperAnimal / Model Zoo model produces, since
-    ``create_df_from_prediction(multi_animal=True)`` inserts an ``individuals``
-    level — is therefore rejected by default.
+    centroid and one orientation per frame, so DLC's multi-animal output is
+    rejected by default. Every SuperAnimal and Model Zoo model produces it:
+    ``create_df_from_prediction(multi_animal=True)`` inserts an
+    ``individuals`` level.
 
     Parameters
     ----------
@@ -57,9 +57,8 @@ def squeeze_individuals(
 
     Notes
     -----
-    With several individuals the frame is returned **untouched**. Choosing one
-    would be inventing an answer the data does not contain; the caller opted
-    into unsupported territory, so the failure belongs at the step that
+    With several individuals the frame is returned **untouched**: the data
+    names no single animal to choose. The failure belongs at the step that
     actually cannot cope.
     """
     nlevels = getattr(df.columns, "nlevels", None)
@@ -83,7 +82,7 @@ def squeeze_individuals(
         logger.warning(
             "Spyglass position is built for single-animal DLC output; got "
             f"{nlevels} column levels ({list(df.columns.names or [])}). "
-            "Proceeding as requested -- downstream steps are likely to fail."
+            "Proceeding as requested. Downstream steps are likely to fail."
         )
         return df
 
@@ -99,7 +98,7 @@ def squeeze_individuals(
     logger.warning(
         f"Multi-animal DLC output with {len(individuals)} individuals "
         f"({individuals}). Spyglass position tracks one animal per entry and "
-        "will not choose for you -- the frame is passed through unchanged, so "
+        "will not choose for you. The frame is passed through unchanged, so "
         "a downstream step will fail. Re-run inference with max_individuals=1 "
         "for a usable result."
     )
@@ -131,8 +130,8 @@ def parse_dlc_h5_output(
         If False, return just DataFrame. Default True.
     allow_multi_animal : bool, optional
         Accept DLC multi-animal output, which carries an extra ``individuals``
-        column level. Default False -- Spyglass position is built for
-        single-animal tracking, so the guard is on unless a caller opts out.
+        column level. Default False: Spyglass position tracks one animal,
+        so the guard is on unless a caller opts out.
         With one individual the level is squeezed and everything downstream is
         unchanged; with several the frame is passed through **as-is** and later
         stages will fail. See :func:`squeeze_individuals`.
@@ -247,7 +246,7 @@ def get_dlc_bodyparts(h5_path: Union[Path, str]) -> list[str]:
     h5_path = Path(h5_path)
 
     if h5_path.suffix == ".h5":
-        # For h5, we can get columns without loading full data
+        # h5 exposes its columns without loading the data
         with pd.HDFStore(h5_path, mode="r") as store:
             # Get first key (typically 'df_with_missing')
             key = list(store.keys())[0]
@@ -377,7 +376,7 @@ def validate_dlc_output_structure(
         If DataFrame doesn't have expected MultiIndex structure
     """
     df = squeeze_individuals(df, allow_multi_animal=allow_multi_animal)
-    if df.columns.nlevels != 3:  # multi-animal, opted in -- names differ
+    if df.columns.nlevels != 3:  # multi-animal, opted in: names differ
         return
 
     # Validate column level names
@@ -461,9 +460,23 @@ def suppress_print_from_package(package: str = "deeplabcut"):
         """Proxy stream: suppress writes from *package*, pass others through."""
 
         def __init__(self, stream: object) -> None:
+            """Wrap ``stream``, the real stdout or stderr."""
             self._stream = stream
 
         def write(self, text: str) -> int:
+            """Write ``text`` unless its caller belongs to *package*.
+
+            Parameters
+            ----------
+            text : str
+                The text passed to the wrapped stream.
+
+            Returns
+            -------
+            int
+                Characters accepted. A dropped write reports ``len(text)``,
+                so the caller sees a successful write.
+            """
             for frame_info in inspect.stack():
                 # Real FrameInfo objects store the frame in .frame;
                 # test mocks may expose f_globals directly on the object.
@@ -472,13 +485,15 @@ def suppress_print_from_package(package: str = "deeplabcut"):
                     raw = getattr(frame_info, "frame", None)
                     fg = getattr(raw, "f_globals", {}) if raw else {}
                 if fg.get("__name__", "").startswith(package):
-                    return len(text)  # drop — came from target package
+                    return len(text)  # drop: from the target package
             return self._stream.write(text)
 
         def flush(self) -> None:
+            """Flush the wrapped stream."""
             return self._stream.flush()
 
         def __getattr__(self, name: str):
+            """Defer any other stream attribute to the wrapped stream."""
             return getattr(self._stream, name)
 
     old_stdout, old_stderr = sys.stdout, sys.stderr
@@ -502,7 +517,7 @@ def dedupe_warnings(pattern: str = r"\"[^\"]*\"|'[^']*'"):
         Device.model was detected as a string ... Remapping "unknown" ...
         Device.model was detected as a string ... Remapping "unknown2" ...
 
-    -- two warnings about one schema-migration fact, neither actionable by
+    Two warnings carry one schema-migration fact, neither actionable by
     the caller. This collapses them to one by ignoring quoted literals
     when deciding whether two warnings are "the same".
 
@@ -549,7 +564,48 @@ test_mode_suppress = (
 
 
 class DLCProjectReader:  # Note: simplifying to require only project path
+    """Reader for the three files a DLC inference run leaves on disk.
+
+    An inference directory holds a ``*meta.pickle`` (run metadata), a ``.h5``
+    (body-part estimates) and a ``*.y*ml`` (the configuration used). This
+    class locates all three from the directory alone and exposes them as
+    lazily loaded properties, so opening a project costs no file reads.
+
+    Attributes
+    ----------
+    dlc_dir : Path
+        The inference directory.
+    pkl_path, h5_path, yml_path : Path
+        The three resolved files.
+    fps : float
+        Frame rate recorded in the metadata.
+    nframes : int
+        Frame count recorded in the metadata.
+    creation_time : float
+        Modification time of the ``.h5``, used as the run's timestamp.
+    """
+
     def __init__(self, dlc_dir, filename_prefix=""):
+        """Locate the project's three files and read its metadata.
+
+        Parameters
+        ----------
+        dlc_dir : str or Path
+            Directory holding the inference output. Searched recursively for
+            the pickle and h5; the config is taken from the top level only.
+        filename_prefix : str, optional
+            Restrict all three searches to names starting with this prefix.
+            Defaults to matching any name.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``dlc_dir`` does not exist.
+        ValueError
+            If the searches do not resolve to exactly one file each. A
+            directory holding several configs prefers ``dj_dlc_config``,
+            the one Spyglass writes.
+        """
         self.dlc_dir = Path(dlc_dir)
         if not self.dlc_dir.exists():
             raise FileNotFoundError(  # pragma: no cover
@@ -563,7 +619,7 @@ class DLCProjectReader:  # Note: simplifying to require only project path
         # config file: configuration for invoking the DLC post estimation step
         yml_paths = list(self.dlc_dir.glob(f"{filename_prefix}*.y*ml"))
 
-        if len(yml_paths) > 1:  # If multiple, defer to the one we save.
+        if len(yml_paths) > 1:  # Defer to the Spyglass-written config
             yml_paths = [  # pragma: no cover
                 p for p in yml_paths if p.stem == "dj_dlc_config"
             ]
@@ -622,11 +678,11 @@ class DLCProjectReader:  # Note: simplifying to require only project path
     def model(self) -> dict:
         """Model metadata from the DLC pickle and project config.
 
-        Lazy on purpose. Nothing in the pipeline reads this --
-        ``DLCPoseEstimation`` uses only ``creation_time`` and ``df`` -- yet every
-        field is derived from a DLC-version-specific format. Computing it in
-        ``__init__`` meant a scorer or config shape we had not seen could fail an
-        otherwise-good ``populate()``. Undrivable fields are None, not an error.
+        Lazy on purpose. ``DLCPoseEstimation`` reads only ``creation_time``
+        and ``df``, while every field here is derived from a
+        DLC-version-specific format, so an unfamiliar scorer or config shape
+        can fail a good ``populate()`` if computed in ``__init__``.
+        Underivable fields are None, not an error.
         """
         if self._model is not None:
             return self._model
@@ -707,7 +763,7 @@ class DLCProjectReader:  # Note: simplifying to require only project path
 
 
 def read_yaml(fullpath, filename="*"):
-    """Return contents of yml in fullpath. If available, defer to our version
+    """Return contents of yml in fullpath, preferring the Spyglass-written
 
     Parameters
     ----------
@@ -778,11 +834,10 @@ def route_gputouse_to_device(
     Position V2 targets DeepLabCut >= 3 (PyTorch engine), which selects the GPU
     via ``device`` (e.g. ``"cuda:0"``). ``gputouse`` is a V1/TensorFlow
     parameter that the PyTorch ``analyze_videos``/``train_network`` paths
-    ignore, so a stray ``gputouse`` would otherwise silently have no effect.
-    When *source* carries ``gputouse``, warn, drop it from *target* so the
+    ignore. When *source* carries ``gputouse``, warn, drop it from *target*
+    so the
     ignored parameter is never forwarded, and set ``target["device"]`` to the
-    best available option -- unless *target* already specifies ``device``, in
-    which case the explicit choice wins.
+    best available option. An explicit ``device`` in *target* wins.
 
     The ``gputouse`` -> ``device`` mapping mirrors DeepLabCut's own
     ``_gpu_to_use_to_device`` (integer ``N`` -> ``"cuda:N"``).
@@ -835,8 +890,8 @@ def import_analyze_videos(engine: Optional[str]) -> Callable:
     ----------
     engine : str or None
         A project config's ``engine`` key. ``"pytorch"`` selects DLC 3.x's
-        PyTorch backend; anything else — including None, as in every DLC 2.x
-        project — selects the TensorFlow backend.
+        PyTorch backend. Anything else selects the TensorFlow backend,
+        including None, as in every DLC 2.x project.
 
     Returns
     -------
@@ -851,9 +906,8 @@ def import_analyze_videos(engine: Optional[str]) -> Callable:
     Notes
     -----
     Only the selected backend is imported. The two are not both present in a
-    typical install -- DLC 2.x ships no PyTorch backend, and a torch-only DLC
-    3.x install ships no TensorFlow one -- so importing both aborts inference
-    before it reaches the one that would have worked.
+    typical install: DLC 2.x ships no PyTorch backend, and a torch-only DLC
+    3.x install ships no TensorFlow one.
     """
     module = (
         "deeplabcut.pose_estimation_pytorch"
@@ -1004,8 +1058,7 @@ def to_legacy_eval_fields(csv_results: dict) -> dict:
     A 2.x row passes through untouched: its headers are already the field
     names, so renaming it unconditionally replaced real measurements with
     whatever the 3.x lookups missed. An absent column maps to None rather than
-    a stand-in value: ``DLCModelEvaluation`` persists this verbatim, so a
-    guessed number would be stored as if it had been measured.
+    a stand-in value, since ``DLCModelEvaluation`` persists this verbatim.
     """
     if any(field in csv_results for field in _LEGACY_EVAL_FIELDS):
         return csv_results
@@ -1023,6 +1076,32 @@ def get_dlc_model_eval(
     trainingsetindex: int,
     dlc_config: str,
 ):
+    """Run DLC's evaluation and read back the metrics it writes.
+
+    Parameters
+    ----------
+    yml_path : str
+        Path to the project's ``config.yaml``.
+    model_prefix : str
+        Model prefix within the project, as DLC names its subdirectories.
+    shuffle : int
+        Shuffle index to evaluate.
+    trainingsetindex : int
+        Index into ``dlc_config["TrainingFraction"]``. Cast to ``int``, since
+        DLC 3's PyTorch path rejects the ``np.int64`` a ``fetch1`` returns.
+    dlc_config : dict
+        The parsed project configuration.
+
+    Returns
+    -------
+    dict
+        The evaluation metrics, as ``read_dlc_model_eval`` returns them.
+
+    Raises
+    ------
+    IndexError
+        If ``trainingsetindex`` is out of range. Checked before evaluating.
+    """
     project_path = Path(yml_path).parent
 
     # DLC 3's PyTorch evaluate_network rejects a numpy integer as "Invalid

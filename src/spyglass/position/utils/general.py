@@ -159,7 +159,15 @@ def file_log(logger, console=False):
     """
 
     def decorator(func):
+        """Wrap ``func`` so its call is logged to a file."""
+
         def wrapper(self, *args, **kwargs):
+            """Attach a file handler for the call, then restore the logger.
+
+            Logs to ``self.log_path``, or to ``temp_<ClassName>.log`` when
+            the instance names none. The handler is removed and closed on
+            the way out, including when ``func`` raises.
+            """
             if not (log_path := getattr(self, "log_path", None)):
                 log_path = f"temp_{self.__class__.__name__}.log"
             file_handler = logging.FileHandler(log_path, mode="a")

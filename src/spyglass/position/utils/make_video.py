@@ -127,6 +127,17 @@ def ffmpeg_clip(
 
 
 class VideoMaker:
+    """Render a position overlay onto a source video, in batches.
+
+    Frames are processed ``batch_size`` at a time through a four-stage
+    pipeline (extract, plot, stitch, concatenate) under a temp directory
+    keyed by ``key_hash``, so an interrupted render resumes from the last
+    completed batch rather than restarting. Only the matplotlib backend is
+    supported.
+
+    See ``__init__`` for the position inputs and rendering options.
+    """
+
     def __init__(
         self,
         video_filename,
@@ -449,7 +460,21 @@ class VideoMaker:
         self.axes = axes
 
     def _get_centroid_data(self, pos_ind):  # pragma: no cover
+        """Centroid for one sample, in pixels, offset for any crop.
+
+        Parameters
+        ----------
+        pos_ind : int
+            Index into the position arrays.
+
+        Returns
+        -------
+        np.ndarray
+            The (x, y) pixel coordinate within the rendered frame.
+        """
+
         def centroid_to_px(*idx):
+            """Convert the indexed position from cm to pixels."""
             return _to_px(
                 data=self.position_mean[idx], cm_to_pixels=self.cm_to_pixels
             )
@@ -464,11 +489,26 @@ class VideoMaker:
         )
 
     def _get_orient_line(self, pos_ind):  # pragma: no cover
+        """Endpoints of the 30-pixel heading line for one sample.
+
+        Parameters
+        ----------
+        pos_ind : int
+            Index into the orientation and position arrays.
+
+        Returns
+        -------
+        tuple of list
+            ``(xs, ys)``, each a two-element list running from the centroid
+            along the heading. Both are ``[NaN]`` where orientation is NaN,
+            which draws nothing.
+        """
         orient = self.orientation_mean[pos_ind]
         if isinstance(orient, np.ndarray):
             orient = orient[0]
 
         def orient_list(c, axis="x"):
+            """Project ``c`` 30 pixels along ``orient`` on one axis."""
             func = np.cos if axis == "x" else np.sin
             return [c, c + 30 * func(orient)]
 
@@ -674,6 +714,21 @@ class VideoMaker:
         progress_bar=None,
         process_pool=True,  # Re-enable pool
     ):
+        """Render one batch of frames to ``plot_XXXX.png`` in the temp dir.
+
+        Parameters
+        ----------
+        start_frame : int
+            First frame of the batch.
+        end_frame : int
+            Last frame of the batch, inclusive, matching ``ffmpeg_extract``
+            and ``_check_plotted``.
+        progress_bar : tqdm.tqdm, optional
+            Updated once per completed frame.
+        process_pool : bool
+            Render across ``max_workers`` processes. False renders in this
+            process, which keeps tracebacks intact for debugging.
+        """
         logger.debug(f"Plotting   frames: {start_frame} - {end_frame}")
 
         # end_frame is inclusive, as in ffmpeg_extract and _check_plotted

@@ -445,6 +445,29 @@ class Centroid:
     """
 
     def __init__(self, pos_df, points, max_LED_separation=None):
+        """Compute the centroid for every sample in ``pos_df``.
+
+        The result lands in ``self.centroid`` as an (N, 2) array. Which
+        method runs follows from ``len(points)``: one point passes the
+        body-part position through, two take the midpoint, and four build on
+        the two-point result.
+
+        Parameters
+        ----------
+        pos_df : pandas.DataFrame
+            Position dataframe with MultiIndex columns ``(bodypart, coord)``.
+        points : dict
+            Point roles mapped to body-part names. One, two or four entries.
+        max_LED_separation : float, optional
+            Maximum separation in pixels between LEDs. Samples exceeding it
+            yield NaN. Required for every method except the one-point case.
+
+        Raises
+        ------
+        ValueError
+            If ``points`` holds a count other than 1, 2 or 4, or if
+            ``max_LED_separation`` is missing for a multi-point method.
+        """
         if max_LED_separation is None and len(points) != 1:
             raise ValueError("max_LED_separation must be provided")
         if len(points) not in [1, 2, 4]:
