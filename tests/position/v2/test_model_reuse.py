@@ -13,7 +13,10 @@ class TestReuseCandidates:
 
     @pytest.fixture(autouse=True)
     def _cls(self, pv2_train):
+        from spyglass.position.v2.utils.model import reuse_candidates
+
         self.Model = pv2_train.Model
+        self.reuse_candidates = staticmethod(reuse_candidates)
 
     def test_groups_rows_by_model_with_subjects(self):
         rows = [
@@ -21,7 +24,7 @@ class TestReuseCandidates:
             {"model_id": "m1", "subject_id": "B"},
             {"model_id": "m2", "subject_id": "A"},
         ]
-        out = self.Model._reuse_candidates(rows)
+        out = self.reuse_candidates(rows)
         by_id = {c["model_id"]: c for c in out}
         assert by_id["m1"]["subjects"] == ["A", "B"]
         assert by_id["m2"]["subjects"] == ["A"]
@@ -31,12 +34,12 @@ class TestReuseCandidates:
             {"model_id": "m1", "subject_id": "A"},
             {"model_id": "m1", "subject_id": "B"},
         ]
-        (cand,) = self.Model._reuse_candidates(rows, subjects={"B", "Z"})
+        (cand,) = self.reuse_candidates(rows, subjects={"B", "Z"})
         assert cand["overlap"] == ["B"]
 
     def test_model_with_no_subject_kept_with_empty_set(self):
         rows = [{"model_id": "m1", "subject_id": None}]
-        (cand,) = self.Model._reuse_candidates(rows)
+        (cand,) = self.reuse_candidates(rows)
         assert cand["subjects"] == [] and cand["overlap"] == []
 
     def test_sorted_and_deduped(self):
@@ -45,7 +48,7 @@ class TestReuseCandidates:
             {"model_id": "ma", "subject_id": "A"},
             {"model_id": "ma", "subject_id": "A"},  # dup
         ]
-        out = self.Model._reuse_candidates(rows)
+        out = self.reuse_candidates(rows)
         assert [c["model_id"] for c in out] == ["ma", "mb"]
         assert out[0]["subjects"] == ["A"]  # deduped
 
@@ -55,14 +58,17 @@ class TestRedundantModelMessage:
 
     @pytest.fixture(autouse=True)
     def _cls(self, pv2_train):
+        from spyglass.position.v2.utils.model import redundant_model_msg
+
         self.MS = pv2_train.ModelSelection
+        self.redundant_model_msg = staticmethod(redundant_model_msg)
 
     def test_message_lists_models_and_escape_hatch(self):
         cands = [
             {"model_id": "m1", "subjects": ["A"], "overlap": ["A"]},
             {"model_id": "m2", "subjects": ["B"], "overlap": []},
         ]
-        msg = self.MS._redundant_model_msg("skelX", cands)
+        msg = self.redundant_model_msg("skelX", cands)
         assert "skelX" in msg
         assert "m1" in msg and "m2" in msg
         assert "overlaps ['A']" in msg  # overlap annotated
