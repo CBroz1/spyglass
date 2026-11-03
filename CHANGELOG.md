@@ -2,16 +2,14 @@
 
 ## [0.6.1] (Unreleased)
 
-<!--
 ### Release notes
 
 ```python
-# Add alters here
-# from spyglass.location import Each Table Needed To Resolve FKRef
+from spyglass.common import VideoFile
 
-# Table.alter()
+VideoFile.alter()  # Adds a new nullable path field
+VideoFile.update_entries()  # Retroactively populate new field
 ```
--->
 
 ### Breaking Changes
 
@@ -39,6 +37,11 @@ info = (
 # ... or keep every electrode of the group
 rows = SpikeSortingOutput().get_sort_group_info(merge_keys).fetch(as_dict=True)
 ```
+
+#### `VideoFile` Gains a `path` Column (#1647)
+
+`VideoFile` stores the resolved on-disk video path, which Position V2 uses to
+match a video to its row.
 
 #### Shared Position Utilities (#1646)
 
