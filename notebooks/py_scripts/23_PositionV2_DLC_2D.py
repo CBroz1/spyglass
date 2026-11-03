@@ -425,6 +425,13 @@ print("Synthetic labels written (tutorial only - replace with real labels).")
 # ipython -c "import deeplabcut; deeplabcut.label_frames('$config_path')"
 # ```
 #
+# On a Wayland session the GUI needs a Qt platform plugin that the DLC
+# environment does not install. If it exits reporting `Could not load the Qt
+# platform plugin "wayland"`, prefix the command with `QT_QPA_PLATFORM=xcb`
+# to route it through XWayland. See
+# [Troubleshooting](../docs/src/GettingStarted/TROUBLESHOOTING.md) for the
+# alternative, and note that `check_environment()` above reports this case.
+#
 # Return here once labeling is complete.
 
 # %% [markdown]

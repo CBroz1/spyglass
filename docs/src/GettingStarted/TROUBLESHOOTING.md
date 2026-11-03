@@ -356,6 +356,63 @@ length in **epochs**, not TensorFlow **iterations**. Do not reuse a V1
 full knob mapping (`maxiters`→`epochs`, `saveiters`→`save_epochs`) and the
 ~200-epoch default.
 
+### DLC labelling GUI fails on Wayland
+
+**Symptoms:**
+
+- `qt.qpa.plugin: Could not load the Qt platform plugin "wayland" in "" even   though it was found`
+- `This application failed to start because no Qt platform plugin could be   initialized`
+- The frame-labelling step exits immediately, drawing no window.
+
+**Cause:**
+
+DeepLabCut's labelling GUI is a Qt application, and Qt chooses a platform plugin
+from the session type. A Wayland session needs the `qwayland` plugin, which
+ships separately from the Qt libraries DeepLabCut pulls in. The DLC environment
+does not list a Qt package, so the plugin is absent unless something else in the
+solve happens to provide it.
+
+**Solutions:**
+
+1. **Run the GUI through XWayland.** This needs no new package, and `DISPLAY` is
+    already set in a Wayland session that runs XWayland:
+
+    ```bash
+    QT_QPA_PLATFORM=xcb python -c "
+    from spyglass.position.v1 import DLCProject
+    DLCProject.run_label_frames(key)
+    "
+    ```
+
+    To avoid repeating it, set it for the environment:
+
+    ```bash
+    conda activate spyglass-dlc3
+    conda env config vars set QT_QPA_PLATFORM=xcb
+    ```
+
+2. **Install the plugin** for a native Wayland window:
+
+    ```bash
+    conda install -c conda-forge qt-wayland
+    ```
+
+    This adds a Qt package to an environment whose solve is sensitive (see the
+    BLAS note under *Environment Creation Fails*). Check that
+    `python -c "import deeplabcut"` still works afterwards.
+
+3. **Check before you get there.** The Position V2 environment check reports
+    this case, so a labelling session can be verified in advance:
+
+    ```python
+    from spyglass.position.v2.env_check import check_environment
+
+    check_environment()
+    ```
+
+Labelling needs a local display either way. It cannot run over a plain SSH
+connection without X forwarding, and not at all on a headless compute node.
+
 ### SpyglassConfig Issues
 
 **Symptoms:**
