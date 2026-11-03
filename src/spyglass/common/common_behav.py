@@ -961,6 +961,28 @@ class VideoFile(SpyglassIngestion, dj.Imported):
         self.update1(row=row)
         return status
 
+    def populate(self, *restrictions, **kwargs):
+        """Ingest sessions that have no rows, then fill any null ``path``.
+
+        ``path`` is new in this release, so a database ingested by an earlier
+        version holds rows where it is NULL. Ingestion alone does not reach
+        them: ``SpyglassIngestion.populate`` skips a session that already has
+        rows, so the column would stay empty for every session ingested
+        before the upgrade. Backfilling after the ingest means one
+        ``populate`` fills the column for old and new sessions alike.
+
+        Parameters
+        ----------
+        *restrictions
+            Restrictions on the key source, as for DataJoint's populate.
+            Also scope the backfill.
+        **kwargs
+            Passed to the ingestion populate.
+        """
+        super().populate(*restrictions, **kwargs)
+        restrict = dj.AndList(restrictions) if restrictions else True
+        self.update_entries(restrict, display_progress=False)
+
     @classmethod
     def update_entries(cls, restrict=True, display_progress=True):
         """Update the camera_name and path fields for all null entries.
@@ -972,6 +994,8 @@ class VideoFile(SpyglassIngestion, dj.Imported):
         query = instance & restrict & "(camera_name IS NULL OR path IS NULL)"
         existing_entries = query.fetch("KEY")
         total = len(existing_entries)
+        if not total:  # nothing to fill; stay silent so callers can be eager
+            return
         updated_camera = updated_path = skipped_camera = skipped_path = 0
         failed_path = []
 
@@ -1187,9 +1211,49 @@ class VideoFile(SpyglassIngestion, dj.Imported):
         if len(query) != 1:
             raise ValueError(
                 f"No unique entry in VideoFile for {video_path}: \n{query}"
+                + self._path_hint()
             )
 
         return query.fetch1("KEY")
+
+    def _path_hint(self) -> str:
+        """Name the path problems that could explain a failed lookup.
+
+        ``path`` is matched exactly, so two kinds of row match nothing: one
+        whose path was never filled, and one whose stored path is absent from
+        disk. They need different answers, so they are counted separately.
+        Counts are table-wide, not scoped to any restriction on ``self``.
+
+        A stored path is read here, never rewritten. An unreachable mount
+        looks the same as a wrong path, and re-resolving would discard a
+        correct value.
+
+        Returns
+        -------
+        str
+            One line per problem found, or ``""`` when every row holds a path
+            that exists. Costs one ``stat`` per populated row, so call it on
+            an error path rather than a read path.
+        """
+        n_null = len(VideoFile & "path IS NULL")
+        stored = (VideoFile & "path IS NOT NULL").fetch("path")
+        n_missing = sum(1 for p in stored if not Path(p).exists())
+
+        lines = []
+        if n_null:
+            lines.append(
+                f"{n_null} VideoFile row(s) have no stored path. Run "
+                "VideoFile.update_entries() to fill them, or "
+                "VideoFile.populate() to ingest and fill in one step."
+            )
+        if n_missing:
+            lines.append(
+                f"{n_missing} VideoFile row(s) store a path that is not on "
+                "disk, which no lookup can match. Check that the video "
+                "volume is mounted and SPYGLASS_VIDEO_DIR is set; correct a "
+                "stale path with VideoFile.update1()."
+            )
+        return ("\n" + "\n".join(lines)) if lines else ""
 
 
 @schema

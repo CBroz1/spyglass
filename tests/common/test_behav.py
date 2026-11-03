@@ -100,6 +100,115 @@ def test_videofile_update_entries(common):
     ), "update_entries should leave camera_name populated"
 
 
+def test_populate_fills_null_path(common, mini_copy_name):
+    """VideoFile.populate() fills a path the ingest path cannot reach.
+
+    Ingestion skips a session that already has rows, so a row left with a
+    NULL path by an earlier version is only reached by the backfill.
+    """
+    video = common.VideoFile()
+    key = (video & {"nwb_file_name": mini_copy_name}).fetch(
+        "KEY", as_dict=True
+    )[0]
+    original = (video & key).fetch1("path")
+    # Guards the assertion below: if ingestion stopped filling path, the
+    # round trip would compare None to None and pass with nothing working.
+    assert original, "ingestion left path empty; this test proves nothing"
+
+    try:
+        video.update1({**key, "path": None})
+        assert (video & key).fetch1("path") is None, "setup did not null path"
+
+        video.populate({"nwb_file_name": mini_copy_name})
+
+        assert (video & key).fetch1(
+            "path"
+        ) == original, "populate did not refill the null path"
+    finally:
+        video.update1({**key, "path": original})
+
+
+def test_path_hint_counts_null_rows(common, mini_copy_name):
+    """The hint counts null-path rows, and names the fix."""
+    video = common.VideoFile()
+    baseline = len(video & "path IS NULL")
+
+    key = (video & {"nwb_file_name": mini_copy_name}).fetch(
+        "KEY", as_dict=True
+    )[0]
+    original = (video & key).fetch1("path")
+    try:
+        video.update1({**key, "path": None})
+        hint = video._path_hint()
+        assert f"{baseline + 1} VideoFile row(s) have no stored path" in hint
+        assert "update_entries()" in hint
+    finally:
+        video.update1({**key, "path": original})
+
+    if not baseline:  # only provable when the table starts clean
+        assert video._path_hint() == "", "hint fired with no null paths"
+
+
+def test_path_hint_counts_missing_files(common, mini_copy_name):
+    """A stored path that is not on disk is reported, and left alone.
+
+    `_prepare_video_entry` falls back to ``video_dir / basename`` without
+    checking that it exists, so a row can hold a path no lookup can match.
+    `update_entries` selects on NULL only, so nothing repairs it.
+    """
+    video = common.VideoFile()
+    key = (video & {"nwb_file_name": mini_copy_name}).fetch(
+        "KEY", as_dict=True
+    )[0]
+    original = (video & key).fetch1("path")
+    bogus = "/nonexistent/video_dir/never_written.mp4"
+
+    try:
+        video.update1({**key, "path": bogus})
+        hint = video._path_hint()
+        assert "1 VideoFile row(s) store a path that is not on disk" in hint
+        assert "no stored path" not in hint, "miscounted as a null path"
+
+        # The diagnostic reports; it must not rewrite the row.
+        video.update_entries(key)
+        assert (video & key).fetch1(
+            "path"
+        ) == bogus, "a stale path was silently rewritten"
+    finally:
+        video.update1({**key, "path": original})
+
+
+def test_fetch_key_from_path_names_null_paths(common, mini_copy_name, tmp_path):
+    """A miss explains that a null-path row cannot match."""
+    video = common.VideoFile()
+    key = (video & {"nwb_file_name": mini_copy_name}).fetch(
+        "KEY", as_dict=True
+    )[0]
+    original = (video & key).fetch1("path")
+
+    fake = tmp_path / "unregistered.mp4"
+    fake.touch()
+    try:
+        video.update1({**key, "path": None})
+        with pytest.raises(ValueError, match="no stored path"):
+            video.fetch_key_from_path(str(fake))
+    finally:
+        video.update1({**key, "path": original})
+
+
+def test_update_entries_silent_when_nothing_null(common, caplog):
+    """A no-op backfill logs nothing, so callers can run it eagerly."""
+    video = common.VideoFile()
+    key = (video & "path IS NOT NULL").fetch("KEY", as_dict=True)[0]
+
+    caplog.clear()
+    video.update_entries(key)
+
+    assert (
+        "update_entries" not in caplog.text
+    ), "no-op update_entries logged a summary"
+
+
 def test_fetch_key_from_path_no_side_effect(common, tmp_path):
     """fetch_key_from_path must not call update_entries by default."""
     from unittest.mock import patch
