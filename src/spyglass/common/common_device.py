@@ -313,12 +313,61 @@ class CameraDevice(SpyglassIngestion, dj.Manual):
                 "meters_per_pixel": "meters_per_pixel",
                 "lens": "lens",
                 "camera_id": self.get_camera_id,
-            },
-            "model": {
-                "model": "name",
-                "manufacturer": "manufacturer",
+                "model": self.get_model,
+                "manufacturer": self.get_manufacturer,
             },
         }
+
+    @staticmethod
+    def get_model(camera_nwb_obj: ndx_franklab_novela.CameraDevice) -> str:
+        """Model designation of a camera.
+
+        pynwb 3 holds the model in a ``DeviceModel`` object. Its ``name``
+        identifies it within ``/general/device_models/`` and must be unique
+        there, so a file with several cameras of one make often folds the
+        manufacturer into that name. ``model_number`` carries the designation
+        alone, so it is preferred.
+
+        Parameters
+        ----------
+        camera_nwb_obj : ndx_franklab_novela.CameraDevice
+            The camera to read.
+
+        Returns
+        -------
+        str
+            ``model_number`` when set, else the ``DeviceModel`` name, else
+            ``""`` for a camera that declares no model.
+        """
+        model = getattr(camera_nwb_obj, "model", None)
+        if model is None:
+            return ""
+        if isinstance(model, str):  # written before pynwb 3's DeviceModel
+            return model
+        return getattr(model, "model_number", None) or model.name
+
+    @staticmethod
+    def get_manufacturer(
+        camera_nwb_obj: ndx_franklab_novela.CameraDevice,
+    ) -> str:
+        """Manufacturer of a camera.
+
+        Read from the camera's ``DeviceModel``, which is where pynwb 3 keeps
+        it, falling back to the deprecated attribute on the device itself.
+
+        Parameters
+        ----------
+        camera_nwb_obj : ndx_franklab_novela.CameraDevice
+            The camera to read.
+
+        Returns
+        -------
+        str
+            The manufacturer, or ``""`` when neither source names one.
+        """
+        model = getattr(camera_nwb_obj, "model", None)
+        from_model = getattr(model, "manufacturer", None) if model else None
+        return from_model or getattr(camera_nwb_obj, "manufacturer", None) or ""
 
     @staticmethod
     def get_camera_id(camera_nwb_obj: ndx_franklab_novela.CameraDevice) -> int:

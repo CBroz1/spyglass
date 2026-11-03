@@ -61,3 +61,75 @@ def test_none_acq_device_attrs(common):
 
     system = common.DataAcquisitionDevice._add_system(None)
     assert system is None, "None system should return None"
+
+
+@pytest.fixture
+def camera_factory():
+    """Build `ndx_franklab_novela.CameraDevice` objects for mapping tests."""
+    import ndx_franklab_novela
+    from pynwb.device import DeviceModel
+
+    def _make(model=None, manufacturer=None, model_number=None):
+        kwargs = dict(
+            name="camera_device 7",
+            meters_per_pixel=0.002,
+            lens="Tamron 8mm",
+            camera_name="mapping_test_cam",
+        )
+        if model is not None:
+            kwargs["model"] = DeviceModel(
+                name=model,
+                manufacturer=manufacturer or "unset",
+                **({"model_number": model_number} if model_number else {}),
+            )
+        elif manufacturer is not None:
+            kwargs["manufacturer"] = manufacturer
+        return ndx_franklab_novela.CameraDevice(**kwargs)
+
+    return _make
+
+
+def test_camera_model_prefers_model_number(common, camera_factory):
+    """`model` reads the designation, not the DeviceModel's object name.
+
+    A DeviceModel name must be unique within `/general/device_models/`, so a
+    writer disambiguates it by folding in the manufacturer. Reading it into
+    `model` merges the two fields.
+    """
+    cam = camera_factory(
+        model="FLIR Blackfly S",
+        manufacturer="FLIR",
+        model_number="BFS-U3-16S2M",
+    )
+    assert common.CameraDevice.get_model(cam) == "BFS-U3-16S2M"
+    assert common.CameraDevice.get_manufacturer(cam) == "FLIR"
+
+
+def test_camera_model_falls_back_to_name(common, camera_factory):
+    """An unset `model_number` falls back to the DeviceModel name."""
+    cam = camera_factory(model="Blackfly S", manufacturer="FLIR")
+    assert common.CameraDevice.get_model(cam) == "Blackfly S"
+    assert common.CameraDevice.get_manufacturer(cam) == "FLIR"
+
+
+def test_camera_without_model_is_readable(common, camera_factory):
+    """A camera declaring no model yields empty strings, and does not raise.
+
+    `model` is optional on CameraDevice. Reading it as a nested NWB object
+    raises `ValueError: NWB object model not found`, which blocks ingestion
+    of the whole file.
+    """
+    cam = camera_factory(manufacturer="FLIR")
+    assert common.CameraDevice.get_model(cam) == ""
+    assert common.CameraDevice.get_manufacturer(cam) == "FLIR"
+
+    bare = camera_factory()
+    assert common.CameraDevice.get_model(bare) == ""
+    assert common.CameraDevice.get_manufacturer(bare) == ""
+
+
+def test_camera_model_accepts_legacy_string(common, camera_factory):
+    """A pre-pynwb-3 file stores `model` as a plain string."""
+    cam = camera_factory()
+    cam.fields["model"] = "Blackfly S"
+    assert common.CameraDevice.get_model(cam) == "Blackfly S"
