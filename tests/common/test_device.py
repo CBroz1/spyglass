@@ -133,3 +133,21 @@ def test_camera_model_accepts_legacy_string(common, camera_factory):
     cam = camera_factory()
     cam.fields["model"] = "Blackfly S"
     assert common.CameraDevice.get_model(cam) == "Blackfly S"
+
+
+def test_camera_manufacturer_recovered_from_device(common, camera_factory):
+    """An unset DeviceModel manufacturer falls back to the device's own.
+
+    A file written against an `ndx-franklab-novela` that declares `model` as
+    text, read with a core schema that declares it a `DeviceModel` link,
+    yields a DeviceModel whose name carries the whole designation and whose
+    manufacturer is unset. Reading only the DeviceModel leaves the column
+    empty while the text attribute on the device still holds the value.
+    """
+    cam = camera_factory(model="Allied Vision Mako G-508B", manufacturer="x")
+    cam.model.fields["manufacturer"] = None
+    cam.fields["manufacturer"] = "Allied Vision"
+
+    assert common.CameraDevice.get_manufacturer(cam) == "Allied Vision"
+    # The name is what the file holds; splitting it would be a guess.
+    assert common.CameraDevice.get_model(cam) == "Allied Vision Mako G-508B"
