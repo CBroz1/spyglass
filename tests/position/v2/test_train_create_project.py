@@ -1123,3 +1123,37 @@ class TestCreateProjectIntegration:
             out_cfg = yaml.safe_load(f)
 
         assert out_cfg.get("numframes2pick") == 7
+
+    def test_create_project_config_skeleton_matches_the_row(
+        self, dlc_project_config
+    ):
+        """The written config agrees with the Skeleton row just inserted.
+
+        `create_project` inserts `edges: []`, while DeepLabCut's own default
+        names placeholder parts. Leaving the placeholder made the file
+        disagree with the row, and `Model.load` reads the file, so a fresh
+        project could not be imported.
+        """
+        import yaml
+
+        with open(dlc_project_config, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+
+        result = self.model.create_project(
+            project_name="integration_skeleton_test",
+            bodyparts=cfg["bodyparts"],
+            video_list=[{"nwb_file_name": self.nwb_file_name, "epoch": 1}],
+            project_directory=str(self.tmp_path),
+            frames_per_video=7,
+        )
+
+        with open(Path(result["config_path"]), encoding="utf-8") as f:
+            out_cfg = yaml.safe_load(f)
+
+        assert (
+            out_cfg.get("skeleton") == []
+        ), "config kept DLC's placeholder skeleton, which Model.load rejects"
+        from spyglass.position.v2.train import Skeleton
+
+        row = Skeleton() & {"skeleton_id": result["skeleton_id"]}
+        assert row.fetch1("edges") == [], "row and file disagree"

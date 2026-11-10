@@ -875,6 +875,9 @@ class TestModelEvaluation:
 
         with (
             patch.object(type(model), "__and__", return_value=restricted),
+            # The row is a mock, so the real write has nothing to update.
+            # TestEvaluateStoresResult covers the write against a real row.
+            patch.object(type(model), "update1"),
             patch("spyglass.position.v2.train.ModelParams") as mock_mp,
             patch(
                 "spyglass.position.v2.train.ToolStrategyFactory"
@@ -1460,3 +1463,86 @@ class TestDerivedRunName:
     def test_absent_run_name_is_not_invented(self, model):
         """With no run_name the trainer's per-selection default applies."""
         assert self._derive(model, {"max_epochs": 5}) is None
+
+
+class TestEvaluateStoresResult:
+    """`evaluate` must land its result on the row.
+
+    `(self & key).update1(...)` raises `DataJointError: Update cannot be
+    applied to a restricted table`, so a real DLC evaluation ran and then
+    stored nothing, leaving `rank_for_skeleton` with no values to compare.
+    Only the tool call is stubbed here; the write is the real one.
+    """
+
+    def test_evaluation_is_written_to_the_row(self, pv2_train, stub_model):
+        model = pv2_train.Model()
+        key = {"model_id": stub_model["model_id"]}
+        results = {"test_error": 246.95, "train_error": 310.73}
+
+        assert (model & key).fetch1("evaluation") is None, "row starts clean"
+
+        fake = MagicMock()
+        fake.evaluate_model.return_value = results
+        with patch(
+            "spyglass.position.v2.train.ToolStrategyFactory.create_strategy",
+            return_value=fake,
+        ):
+            returned = model.evaluate(key)
+
+        assert returned == results
+        assert (model & key).fetch1(
+            "evaluation"
+        ) == results, "evaluate returned its result without storing it"
+
+
+class TestProjectSkeletonCheck:
+    """A project skeleton is checked before anything is written.
+
+    A project from `create_project` keeps DeepLabCut's placeholder skeleton,
+    `[[bodypart1, bodypart2], [objectA, bodypart3]]`, so this is the first
+    thing a fresh project trips on.
+    """
+
+    PARTS = ["whiteLED", "tailBase", "tailMid"]
+
+    @staticmethod
+    def _check(model, edges, parts, **kw):
+        return type(model)._check_project_skeleton(
+            {"bodyparts": parts, "edges": edges},
+            Path("/proj/config.yaml"),
+            **kw,
+        )
+
+    def test_placeholder_skeleton_raises_naming_the_file(self, model):
+        with pytest.raises(ValueError) as err:
+            self._check(
+                model,
+                [["bodypart1", "bodypart2"], ["objectA", "bodypart3"]],
+                self.PARTS,
+            )
+        message = str(err.value)
+        assert "bodypart1" in message, "names the offending edge"
+        assert "/proj/config.yaml" in message, "names the file to edit"
+        assert "allow_invalid_edges=True" in message, "names the bypass"
+
+    def test_valid_skeleton_passes_through_unchanged(self, model):
+        edges = [["whiteLED", "tailBase"], ["tailBase", "tailMid"]]
+        result = self._check(model, edges, self.PARTS)
+        assert result["edges"] == edges
+
+    def test_bypass_drops_only_the_invalid_edges(self, model):
+        result = self._check(
+            model,
+            [["whiteLED", "tailBase"], ["whiteLED", "bodypart2"]],
+            self.PARTS,
+            allow_invalid_edges=True,
+        )
+        assert result["edges"] == [["whiteLED", "tailBase"]]
+
+    def test_half_valid_edge_is_invalid(self, model):
+        """One unknown endpoint makes the edge unusable, not half usable."""
+        with pytest.raises(ValueError, match="bodypart2"):
+            self._check(model, [["whiteLED", "bodypart2"]], self.PARTS)
+
+    def test_absent_edges_key_is_accepted(self, model):
+        assert self._check(model, None, self.PARTS)["bodyparts"] == self.PARTS
