@@ -149,5 +149,5 @@ def test_camera_manufacturer_recovered_from_device(common, camera_factory):
     cam.fields["manufacturer"] = "Allied Vision"
 
     assert common.CameraDevice.get_manufacturer(cam) == "Allied Vision"
-    # The name is what the file holds; splitting it would be a guess.
+    # The stored name is returned whole, never split.
     assert common.CameraDevice.get_model(cam) == "Allied Vision Mako G-508B"
