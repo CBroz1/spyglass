@@ -193,6 +193,56 @@ class TestGuardBranches:
         self.ms._guard_redundant_model(("mp1", "dlc"), False)  # no raise
 
 
+class TestGuardExemptsImports:
+    """The guard curbs training proliferation, not importing weights.
+
+    An import of already-trained weights pays no training cost, so the
+    second `load` of a shared skeleton in a lab must not raise.
+    """
+
+    def test_load_defaults_to_exempt(self, pv2_train):
+        from inspect import signature
+
+        for name in ("load", "load_from_dlc_zoo"):
+            sig = signature(getattr(pv2_train.Model, name))
+            assert (
+                sig.parameters["allow_redundant_model"].default is True
+            ), f"{name} should exempt imports by default"
+
+    def test_selection_insert_still_guards(self, pv2_train):
+        """A direct selection insert keeps the default it always had."""
+        from inspect import signature
+
+        sig = signature(pv2_train.ModelSelection.insert1)
+        assert sig.parameters["allow_redundant_model"].default is False
+
+
+class TestRedundantMessageCall:
+    """The message names the call for the path the user is on."""
+
+    @staticmethod
+    def _candidates():
+        return [{"model_id": "m1", "subjects": ["A"], "overlap": ["A"]}]
+
+    def test_default_names_the_selection_insert(self):
+        from spyglass.position.v2.utils.model import redundant_model_msg
+
+        msg = redundant_model_msg("skelX", self._candidates())
+        assert "ModelSelection().insert1" in msg
+
+    def test_import_path_names_load(self):
+        """Naming the selection insert here sends the user nowhere."""
+        from spyglass.position.v2.utils.model import redundant_model_msg
+
+        msg = redundant_model_msg(
+            "skelX",
+            self._candidates(),
+            declare_call="`Model().load(..., allow_redundant_model=True)`",
+        )
+        assert "Model().load(..., allow_redundant_model=True)" in msg
+        assert "ModelSelection().insert1" not in msg
+
+
 class TestCreateProjectNudge:
     """Early warn (never raises) in create_project."""
 
