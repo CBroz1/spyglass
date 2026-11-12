@@ -226,12 +226,18 @@ class TestGetTrainingHistory:
         with open(dlc_project_config) as f:
             cfg = yaml.safe_load(f)
 
+        # The fixture's own CSV, named exactly. `rglob` picked whichever
+        # match came first, and a live training test in this session-scoped
+        # project leaves a real DLC 3 file alongside it.
         project_dir = Path(cfg["project_path"])
-        stats_files = list(project_dir.rglob("learning_stats.csv"))
-        assert stats_files, "No learning_stats.csv found in synthetic project"
+        stats_file = next(
+            (project_dir / "dlc-models" / "iteration-0").glob(
+                "*trainset80shuffle1/train/learning_stats.csv"
+            )
+        )
 
         df = pd.read_csv(
-            stats_files[0],
+            stats_file,
             header=None,
             names=["iteration", "loss", "learning_rate"],
         )

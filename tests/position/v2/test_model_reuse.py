@@ -118,6 +118,46 @@ class TestGuardBranches:
         with pytest.raises(ValueError, match="m1"):
             self.ms._guard_redundant_model(self._row(), False)
 
+    def test_bulk_insert_reaches_the_guard(self):
+        """`insert([...])` routes through `insert1`, so the guard runs.
+
+        `dj.Table.insert1` delegates to `insert`, so without the override a
+        plural insert reaches the database with no guard at all.
+        """
+        self._set_candidates(
+            [{"model_id": "m1", "subjects": ["A"], "overlap": ["A"]}]
+        )
+        with pytest.raises(ValueError, match="m1"):
+            self.ms.insert([self._row()])
+
+    def test_bulk_insert_checks_every_row(self):
+        """Each row goes through `insert1`, in order, not just the first."""
+        seen = []
+        self.monkeypatch.setattr(
+            self.MS,
+            "insert1",
+            lambda self_, row, **kw: seen.append(row["model_params_id"]),
+        )
+        self.MS().insert(
+            [self._row(model_params_id="a"), self._row(model_params_id="b")]
+        )
+
+        assert seen == ["a", "b"]
+
+    def test_bulk_insert_forwards_the_allow_flag(self):
+        """`allow_redundant_model` applies to every row, not just the call."""
+        seen = []
+        self.monkeypatch.setattr(
+            self.MS,
+            "insert1",
+            lambda self_, row, *, allow_redundant_model=False, **kw: seen.append(
+                allow_redundant_model
+            ),
+        )
+        self.MS().insert([self._row(), self._row()], allow_redundant_model=True)
+
+        assert seen == [True, True]
+
     def test_allow_flag_bypasses(self):
         self._set_candidates(
             [{"model_id": "m1", "subjects": [], "overlap": []}]
